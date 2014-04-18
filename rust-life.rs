@@ -7,6 +7,7 @@ use std::vec;
 use std::str;
 use std::fmt;
 use std::option;
+use std::io::Timer;
 use rand::{task_rng, Rng};
 
 #[cfg(test)]
@@ -17,8 +18,12 @@ static DEAD_CELL: char = '.';
 
 fn main() {
   let mut brd = Board::new(65,250).random();
+  let mut timer = Timer::new().unwrap();
+
+  let periodic = timer.periodic(64);
   loop {
     println!("\x1b[H\x1b[2J{}", brd);
+    periodic.recv();
     brd = brd.next_generation();
   }
 }
@@ -37,7 +42,6 @@ impl Board {
   }
 
   fn random(&self) -> Board {
-    let mut rng = task_rng();
     let board = Vec::from_fn(self.rows, |_| {
       Vec::from_slice(task_rng().gen_vec(self.cols))
     });
