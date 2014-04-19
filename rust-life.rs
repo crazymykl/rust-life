@@ -1,9 +1,10 @@
 extern crate rand;
+extern crate sync;
 
 #[cfg(test)]
 extern crate test;
 
-use std::vec;
+use std::slice;
 use std::str;
 use std::fmt;
 use std::option;
@@ -17,7 +18,7 @@ static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
 
 fn main() {
-  let mut brd = Board::new(65,250).random();
+  let mut brd = Board::new(65, 250).random();
   let mut timer = Timer::new().unwrap();
 
   let periodic = timer.periodic(64);
@@ -30,29 +31,29 @@ fn main() {
 
 #[deriving(Eq)]
 struct Board {
-  board: Vec<Vec<bool>>,
+  board: ~[bool],
   rows: uint,
   cols: uint
 }
 
 impl Board {
   fn new(rows: uint, cols: uint) -> Board {
-    let new_board = Vec::from_elem(rows, Vec::from_elem(cols, false));
+    let new_board = slice::from_elem(rows * cols, false);
     Board { board: new_board, rows: rows, cols: cols }
   }
 
+  fn len(&self) -> uint {
+    self.rows * self.cols
+  }
+
   fn random(&self) -> Board {
-    let board = Vec::from_fn(self.rows, |_| {
-      Vec::from_slice(task_rng().gen_vec(self.cols))
-    });
+    let board = task_rng().gen_vec(self.len());
 
     Board { board: board, rows: self.rows, cols: self.cols }
   }
 
   fn next_generation(&self) -> Board {
-    let new_brd = Vec::from_fn(self.rows, |row| {
-      Vec::from_fn(self.cols, |col| self.successor(col, row))
-    });
+    let new_brd = slice::from_fn(self.len(), |cell| self.successor_cell(cell));
     Board { board: new_brd, rows: self.rows, cols: self.cols }
   }
 
@@ -60,7 +61,7 @@ impl Board {
     if x >= self.cols || y >= self.rows {
       false
     } else {
-      *self.board.get(y).get(x)
+      self.board[y * self.cols + x]
     }
   }
 
@@ -70,7 +71,11 @@ impl Board {
       self.cell_live(x-1, y+0),                         self.cell_live(x+1, y+0),
       self.cell_live(x-1, y+1), self.cell_live(x, y+1), self.cell_live(x+1, y+1),
     ];
-    neighbors.iter().count(|x| *x)
+    neighbors.iter().count(|&x| x)
+  }
+
+  fn successor_cell(&self, cell:uint) -> bool {
+    self.successor(cell % self.cols, cell / self.cols)
   }
 
   fn successor(&self, x:uint, y:uint) -> bool {
@@ -83,40 +88,22 @@ impl Board {
   }
 
   fn from_str(string: &str) -> Option<Board> {
-    fn process_rows(string: &str) -> Option<Vec<Vec<bool>>> {
-      let mut rows = string.split_terminator('\n').peekable();
-      let col_count = match rows.peek() {
-        Some(cols) => Some(cols.len()),
-        None       => None
-      };
-      col_count.and(option::collect(rows.map(|row| {
-        let len = row.len();
-        if len != 0 && Some(len) == col_count {
-          process_cells(row)
-        } else {
-          None
-        }
-      })))
-    }
+    let rows: ~[&str] = string.split_terminator('\n').collect();
+    let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
 
-    fn process_cells(row: &str) -> Option<Vec<bool>> {
-      option::collect(row.chars().map(process_cell))
-    }
+    if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
-    fn process_cell(cell: char) -> Option<bool> {
-      match cell {
+    let brd = option::collect(
+      rows.concat().chars().map(|c| match c {
         LIVE_CELL => Some(true),
         DEAD_CELL => Some(false),
         _         => None
-      }
-    }
+      })
+    );
 
-    let board = process_rows(string);
-    match board {
-      Some(brd) => Some(Board { board: brd.clone(),
-                                rows : brd.len(),
-                                cols : brd.get(0).len() }),
-      None      => None
+    match brd {
+      Some(board) => Some(Board { board: board, rows: row_cnt, cols: col_cnt }),
+      None        => None
     }
   }
 }
@@ -124,18 +111,24 @@ impl Board {
 impl fmt::Show for Board {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 
-    fn row_to_str(row: &Vec<bool>) -> ~str {
-      let chars: ~[char] = row.iter().map(|cell|
-        if *cell {LIVE_CELL} else {DEAD_CELL}
+    fn row_to_str(row: &[bool]) -> ~str {
+      let chars: ~[char] = row.iter().map(|&cell|
+        if cell {LIVE_CELL} else {DEAD_CELL}
       ).collect();
       str::from_chars(chars)
     }
 
-    let rows: ~[~str] = self.board.iter().map(|row|
+    let rows: ~[~str] = self.board.as_slice().chunks(self.cols).map(|row|
       row_to_str(row)
     ).collect();
 
     write!(f.buf, "{}", rows.connect("\n"))
+  }
+}
+
+impl Clone for Board {
+  fn clone(&self) -> Board {
+    Board { board: self.board.clone(), rows: self.rows, cols: self.cols }
   }
 }
 
