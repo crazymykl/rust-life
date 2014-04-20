@@ -5,11 +5,14 @@ extern crate sync;
 extern crate test;
 
 use std::slice;
+use std::cmp;
 use std::str;
 use std::fmt;
+use std::rt;
 use std::option;
 use std::io::Timer;
 use rand::{task_rng, Rng};
+use sync::{Arc, Future};
 
 #[cfg(test)]
 use test::BenchHarness;
@@ -25,7 +28,7 @@ fn main() {
   loop {
     println!("\x1b[H\x1b[2J{}", brd);
     periodic.recv();
-    brd = brd.next_generation();
+    brd = brd.parallel_next_generation();
   }
 }
 
@@ -57,12 +60,34 @@ impl Board {
     Board { board: new_brd, rows: self.rows, cols: self.cols }
   }
 
-  fn cell_live(&self, x: uint, y: uint) -> bool {
-    if x >= self.cols || y >= self.rows {
-      false
-    } else {
-      self.board[y * self.cols + x]
+  fn parallel_next_generation(&self) -> Board {
+    let length = self.len();
+    let num_tasks = cmp::min(rt::default_sched_threads(), length);
+    let shared_brd = Arc::new(self.clone());
+    let all_tasks = slice::from_fn(length, |i| i);
+    let tasks: ~[&[uint]] = all_tasks.chunks(length / num_tasks).collect();
+
+    fn future_batch(task_brd: Arc<Board>, task: ~[uint]) -> Future<~[bool]> {
+      Future::spawn(proc()
+        task.iter().map(|&idx| task_brd.successor_cell(idx)).collect()
+      )
     }
+
+    let future_batches: ~[Future<~[bool]>] = tasks.move_iter().map(|task| {
+      future_batch(shared_brd.clone(), task.into_owned())
+    }).collect();
+
+    let mut new_brd: ~[bool] = slice::with_capacity(length);
+
+    for b in future_batches.move_iter() {
+      new_brd = slice::append(new_brd, b.unwrap());
+    }
+
+    Board { board: new_brd, rows: self.rows, cols: self.cols }
+  }
+
+  fn cell_live(&self, x: uint, y: uint) -> bool {
+    !(x >= self.cols || y >= self.rows) && self.board[y * self.cols + x]
   }
 
   fn living_neighbors(&self, x: uint, y: uint) -> uint {
@@ -168,6 +193,11 @@ fn test_next_generation() {
   assert!(testing_board(1).next_generation() == testing_board(2))
 }
 
+#[test]
+fn test_parallel_next_generation() {
+  assert!(testing_board(1).parallel_next_generation() == testing_board(2))
+}
+
 #[bench]
 fn bench_random(b: &mut BenchHarness) {
   let brd = Board::new(200,200);
@@ -179,5 +209,13 @@ fn bench_hundred_generations(b: &mut BenchHarness) {
   let mut brd = Board::new(200,200).random();
   b.iter(|| {
     for _ in range(0,100) { brd = brd.next_generation() }
+  });
+}
+
+#[bench]
+fn bench_hundred_parallel_generations(b: &mut BenchHarness) {
+  let mut brd = Board::new(200,200).random();
+  b.iter(|| {
+    for _ in range(0,100) { brd = brd.parallel_next_generation() }
   });
 }
