@@ -32,7 +32,7 @@ fn main() {
   }
 }
 
-#[deriving(Eq)]
+#[deriving(Eq, Clone)]
 struct Board {
   board: ~[bool],
   rows: uint,
@@ -148,12 +148,6 @@ impl fmt::Show for Board {
     ).collect();
 
     write!(f.buf, "{}", rows.connect("\n"))
-  }
-}
-
-impl Clone for Board {
-  fn clone(&self) -> Board {
-    Board { board: self.board.clone(), rows: self.rows, cols: self.cols }
   }
 }
 
