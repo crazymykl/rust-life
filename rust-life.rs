@@ -4,7 +4,6 @@ extern crate sync;
 #[cfg(test)]
 extern crate test;
 
-use std::slice;
 use std::cmp;
 use std::str;
 use std::fmt;
@@ -15,7 +14,7 @@ use rand::{task_rng, Rng};
 use sync::{Arc, Future};
 
 #[cfg(test)]
-use test::BenchHarness;
+use test::Bencher;
 
 static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
@@ -34,14 +33,14 @@ fn main() {
 
 #[deriving(Eq, Clone)]
 struct Board {
-  board: ~[bool],
+  board: Vec<bool>,
   rows: uint,
   cols: uint
 }
 
 impl Board {
   fn new(rows: uint, cols: uint) -> Board {
-    let new_board = slice::from_elem(rows * cols, false);
+    let new_board = Vec::from_elem(rows * cols, false);
     Board { board: new_board, rows: rows, cols: cols }
   }
 
@@ -56,7 +55,7 @@ impl Board {
   }
 
   fn next_generation(&self) -> Board {
-    let new_brd = slice::from_fn(self.len(), |cell| self.successor_cell(cell));
+    let new_brd = Vec::from_fn(self.len(), |cell| self.successor_cell(cell));
     Board { board: new_brd, rows: self.rows, cols: self.cols }
   }
 
@@ -64,7 +63,7 @@ impl Board {
     let length = self.len();
     let num_tasks = cmp::min(rt::default_sched_threads(), length);
     let shared_brd = Arc::new(self.clone());
-    let all_tasks = slice::from_fn(length, |i| i);
+    let all_tasks: ~[uint] = range(0, length).collect();
     let tasks: ~[&[uint]] = all_tasks.chunks(length / num_tasks).collect();
 
     fn future_batch(task_brd: Arc<Board>, task: ~[uint]) -> Future<~[bool]> {
@@ -77,17 +76,17 @@ impl Board {
       future_batch(shared_brd.clone(), task.into_owned())
     }).collect();
 
-    let mut new_brd: ~[bool] = slice::with_capacity(length);
+    let mut new_brd: Vec<bool> = Vec::with_capacity(length);
 
     for b in future_batches.move_iter() {
-      new_brd = slice::append(new_brd, b.unwrap());
+      new_brd = new_brd.append(b.unwrap());
     }
 
     Board { board: new_brd, rows: self.rows, cols: self.cols }
   }
 
   fn cell_live(&self, x: uint, y: uint) -> bool {
-    !(x >= self.cols || y >= self.rows) && self.board[y * self.cols + x]
+    !(x >= self.cols || y >= self.rows) && *self.board.get(y * self.cols + x)
   }
 
   fn living_neighbors(&self, x: uint, y: uint) -> uint {
@@ -152,7 +151,7 @@ impl fmt::Show for Board {
 }
 
 #[cfg(test)]
-fn testing_board(n: int) -> Board {
+fn testing_board(n: uint) -> Board {
   let brds = [
     ".@.\n" +
     ".@@\n" +
@@ -193,13 +192,13 @@ fn test_parallel_next_generation() {
 }
 
 #[bench]
-fn bench_random(b: &mut BenchHarness) {
+fn bench_random(b: &mut Bencher) {
   let brd = Board::new(200,200);
   b.iter(|| {brd.random();})
 }
 
 #[bench]
-fn bench_hundred_generations(b: &mut BenchHarness) {
+fn bench_hundred_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(|| {
     for _ in range(0,100) { brd = brd.next_generation() }
@@ -207,7 +206,7 @@ fn bench_hundred_generations(b: &mut BenchHarness) {
 }
 
 #[bench]
-fn bench_hundred_parallel_generations(b: &mut BenchHarness) {
+fn bench_hundred_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(|| {
     for _ in range(0,100) { brd = brd.parallel_next_generation() }
