@@ -34,29 +34,52 @@ fn main() {
 #[deriving(Eq, Clone)]
 struct Board {
   board: Vec<bool>,
+  survive: Vec<uint>,
+  born: Vec<uint>,
   rows: uint,
   cols: uint
 }
 
 impl Board {
   fn new(rows: uint, cols: uint) -> Board {
+    let born = vec!(3);
+    let survive = vec!(2, 3);
+
+    Board::new_with_custom_rules(rows, cols, born, survive)
+  }
+
+  fn new_with_custom_rules(rows: uint, cols: uint, born: Vec<uint>, survive: Vec<uint>) -> Board {
     let new_board = Vec::from_elem(rows * cols, false);
-    Board { board: new_board, rows: rows, cols: cols }
+
+    Board { board  : new_board,
+            born   : born,
+            survive: survive,
+            rows   : rows,
+            cols   : cols }
   }
 
   fn len(&self) -> uint {
     self.rows * self.cols
   }
 
+  fn next_board(&self, new_board: Vec<bool>) -> Board {
+    Board { board  : new_board,
+            born   : self.born.clone(),
+            survive: self.survive.clone(),
+            rows   : self.rows,
+            cols   : self.cols }
+  }
+
   fn random(&self) -> Board {
     let board = task_rng().gen_vec(self.len());
 
-    Board { board: board, rows: self.rows, cols: self.cols }
+    self.next_board(board)
   }
 
   fn next_generation(&self) -> Board {
     let new_brd = Vec::from_fn(self.len(), |cell| self.successor_cell(cell));
-    Board { board: new_brd, rows: self.rows, cols: self.cols }
+
+    self.next_board(new_brd)
   }
 
   fn parallel_next_generation(&self) -> Board {
@@ -82,7 +105,7 @@ impl Board {
       new_brd = new_brd.append(b.unwrap());
     }
 
-    Board { board: new_brd, rows: self.rows, cols: self.cols }
+    self.next_board(new_brd)
   }
 
   fn cell_live(&self, x: uint, y: uint) -> bool {
@@ -105,9 +128,9 @@ impl Board {
   fn successor(&self, x:uint, y:uint) -> bool {
     let neighbors = self.living_neighbors(x, y);
     if self.cell_live(x, y) {
-      neighbors == 2 || neighbors == 3
+      self.survive.contains(&neighbors)
     } else {
-      neighbors == 3
+      self.born.contains(&neighbors)
     }
   }
 
@@ -126,7 +149,7 @@ impl Board {
     );
 
     match brd {
-      Some(board) => Some(Board { board: board, rows: row_cnt, cols: col_cnt }),
+      Some(board) => Some(Board::new(row_cnt, col_cnt).next_board(board)),
       None        => None
     }
   }
