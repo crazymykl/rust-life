@@ -4,12 +4,7 @@ extern crate sync;
 #[cfg(test)]
 extern crate test;
 
-use std::cmp;
-use std::str;
-use std::fmt;
-use std::rt;
-use std::option;
-use std::io::Timer;
+use std::{cmp, str, fmt, rt, option, io};
 use rand::{task_rng, Rng};
 use sync::{Arc, Future};
 
@@ -21,7 +16,7 @@ static DEAD_CELL: char = '.';
 
 fn main() {
   let mut brd = Board::new(65, 250).random();
-  let mut timer = Timer::new().unwrap();
+  let mut timer = io::Timer::new().unwrap();
 
   let periodic = timer.periodic(64);
   loop {
@@ -42,8 +37,8 @@ struct Board {
 
 impl Board {
   fn new(rows: uint, cols: uint) -> Board {
-    let born = vec!(3);
-    let survive = vec!(2, 3);
+    let born = vec![3];
+    let survive = vec![2, 3];
 
     Board::new_with_custom_rules(rows, cols, born, survive)
   }
@@ -189,7 +184,7 @@ fn testing_board(n: uint) -> Board {
 
 #[test]
 fn test_board_str_conversion() {
-  assert!(testing_board(0).to_str() == test_boards[0].to_owned());
+  assert_eq!(testing_board(0).to_str(), test_boards[0].to_owned());
 }
 
 #[test]
@@ -202,38 +197,38 @@ fn test_cell_live() {
 #[test]
 fn test_live_count() {
   let brd = testing_board(0);
-  assert!(brd.living_neighbors(0, 0) == 2);
-  assert!(brd.living_neighbors(2, 2) == 3);
+  assert_eq!(brd.living_neighbors(0, 0), 2);
+  assert_eq!(brd.living_neighbors(2, 2), 3);
 }
 
 #[test]
 fn test_next_generation() {
-  assert!(testing_board(1).next_generation() == testing_board(2))
+  assert_eq!(testing_board(1).next_generation(), testing_board(2));
 }
 
 #[test]
 fn test_parallel_next_generation() {
-  assert!(testing_board(1).parallel_next_generation() == testing_board(2))
+  assert_eq!(testing_board(1).parallel_next_generation(), testing_board(2));
 }
 
 #[bench]
 fn bench_random(b: &mut Bencher) {
   let brd = Board::new(200,200);
-  b.iter(|| {brd.random();})
+  b.iter(|| brd.random());
 }
 
 #[bench]
 fn bench_hundred_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
-  b.iter(|| {
+  b.iter(||
     for _ in range(0,100) { brd = brd.next_generation() }
-  });
+  );
 }
 
 #[bench]
 fn bench_hundred_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
-  b.iter(|| {
+  b.iter(||
     for _ in range(0,100) { brd = brd.parallel_next_generation() }
-  });
+  );
 }
