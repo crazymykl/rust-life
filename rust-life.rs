@@ -63,6 +63,8 @@ impl Board {
   }
 
   fn next_board(&self, new_board: Vec<bool>) -> Board {
+    assert!(new_board.len() == self.len());
+
     Board { board  : new_board,
             born   : self.born.clone(),
             survive: self.survive.clone(),
@@ -174,20 +176,20 @@ impl fmt::Show for Board {
 }
 
 #[cfg(test)]
+static test_boards: [&'static str, ..3] = [
+  ".@.\n.@@\n.@@",
+  "...\n@@@\n...",
+  ".@.\n.@.\n.@."
+];
+
+#[cfg(test)]
 fn testing_board(n: uint) -> Board {
-  let brds = [
-    ".@.\n" +
-    ".@@\n" +
-    ".@@\n"
-    ,
-    "...\n" +
-    "@@@\n" +
-    "...\n"
-    ,
-    ".@.\n" +
-    ".@.\n" +
-    ".@.\n" ];
-  Board::from_str(brds[n]).unwrap()
+  Board::from_str(test_boards[n]).unwrap()
+}
+
+#[test]
+fn test_board_str_conversion() {
+  assert!(testing_board(0).to_str() == test_boards[0].to_owned());
 }
 
 #[test]
