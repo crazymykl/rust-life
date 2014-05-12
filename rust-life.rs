@@ -15,7 +15,7 @@ static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
 
 fn main() {
-  let mut brd = Board::new(65, 250).random();
+  let mut brd = Board::new(65, 248).random();
   let mut timer = io::Timer::new().unwrap();
 
   let periodic = timer.periodic(64);
@@ -83,23 +83,23 @@ impl Board {
     let length = self.len();
     let num_tasks = cmp::min(rt::default_sched_threads(), length);
     let shared_brd = Arc::new(self.clone());
-    let all_tasks: ~[uint] = range(0, length).collect();
-    let tasks: ~[&[uint]] = all_tasks.chunks(length / num_tasks).collect();
+    let all_tasks: Vec<uint> = range(0, length).collect();
+    let tasks: Vec<&[uint]> = all_tasks.as_slice().chunks(length / num_tasks).collect();
 
-    fn future_batch(task_brd: Arc<Board>, task: ~[uint]) -> Future<~[bool]> {
+    fn future_batch(task_brd: Arc<Board>, task: ~[uint]) -> Future<Vec<bool>> {
       Future::spawn(proc()
         task.iter().map(|&idx| task_brd.successor_cell(idx)).collect()
       )
     }
 
-    let future_batches: ~[Future<~[bool]>] = tasks.move_iter().map(|task| {
-      future_batch(shared_brd.clone(), task.into_owned())
+    let future_batches: Vec<Future<Vec<bool>>> = tasks.move_iter().map(|task| {
+      future_batch(shared_brd.clone(), task.to_owned())
     }).collect();
 
     let mut new_brd: Vec<bool> = Vec::with_capacity(length);
 
     for b in future_batches.move_iter() {
-      new_brd = new_brd.append(b.unwrap());
+      new_brd.push_all_move(b.unwrap());
     }
 
     self.next_board(new_brd)
@@ -132,8 +132,8 @@ impl Board {
   }
 
   fn from_str(string: &str) -> Option<Board> {
-    let rows: ~[&str] = string.split_terminator('\n').collect();
-    let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
+    let rows: Vec<&str> = string.split_terminator('\n').collect();
+    let (row_cnt, col_cnt) = (rows.get(0).len(), rows.len());
 
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
@@ -156,13 +156,13 @@ impl fmt::Show for Board {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 
     fn row_to_str(row: &[bool]) -> ~str {
-      let chars: ~[char] = row.iter().map(|&cell|
+      let chars: Vec<char> = row.iter().map(|&cell|
         if cell {LIVE_CELL} else {DEAD_CELL}
       ).collect();
-      str::from_chars(chars)
+      str::from_chars(chars.as_slice())
     }
 
-    let rows: ~[~str] = self.board.as_slice().chunks(self.cols).map(|row|
+    let rows: Vec<~str> = self.board.as_slice().chunks(self.cols).map(|row|
       row_to_str(row)
     ).collect();
 
