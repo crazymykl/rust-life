@@ -218,17 +218,17 @@ fn bench_random(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_hundred_generations(b: &mut Bencher) {
+fn bench_ten_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(||
-    for _ in range(0,100) { brd = brd.next_generation() }
+    for _ in range(0,10) { brd = brd.next_generation() }
   );
 }
 
 #[bench]
-fn bench_hundred_parallel_generations(b: &mut Bencher) {
+fn bench_ten_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(||
-    for _ in range(0,100) { brd = brd.parallel_next_generation() }
+    for _ in range(0,10) { brd = brd.parallel_next_generation() }
   );
 }
