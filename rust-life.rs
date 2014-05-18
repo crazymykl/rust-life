@@ -166,7 +166,7 @@ impl fmt::Show for Board {
       row_to_str(row)
     ).collect();
 
-    write!(f.buf, "{}", rows.connect("\n"))
+    write!(f, "{}", rows.connect("\n"))
   }
 }
 
