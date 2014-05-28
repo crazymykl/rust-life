@@ -138,7 +138,7 @@ impl Board {
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
     let brd = option::collect(
-      rows.concat().chars().map(|c| match c {
+      rows.concat().into_bytes().move_iter().map(|c| match c as char {
         LIVE_CELL => Some(true),
         DEAD_CELL => Some(false),
         _         => None
@@ -155,14 +155,14 @@ impl Board {
 impl fmt::Show for Board {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 
-    fn row_to_str(row: &[bool]) -> ~str {
+    fn row_to_str(row: &[bool]) -> String {
       let chars: Vec<char> = row.iter().map(|&cell|
         if cell {LIVE_CELL} else {DEAD_CELL}
       ).collect();
       str::from_chars(chars.as_slice())
     }
 
-    let rows: Vec<~str> = self.board.as_slice().chunks(self.cols).map(|row|
+    let rows: Vec<String> = self.board.as_slice().chunks(self.cols).map(|row|
       row_to_str(row)
     ).collect();
 
