@@ -5,7 +5,7 @@ extern crate sync;
 extern crate test;
 
 use std::{cmp, str, fmt, rt, option, io};
-use rand::{task_rng, Rng};
+use std::rand::{task_rng, Rng};
 use sync::{Arc, Future};
 
 #[cfg(test)]
@@ -68,7 +68,7 @@ impl Board {
   }
 
   fn random(&self) -> Board {
-    let board = task_rng().gen_vec(self.len());
+    let board = task_rng().gen_iter::<bool>().take(self.len()).collect();
 
     self.next_board(board)
   }
