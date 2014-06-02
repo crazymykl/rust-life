@@ -26,7 +26,7 @@ fn main() {
   }
 }
 
-#[deriving(Eq, Clone)]
+#[deriving(PartialEq, Eq, Clone)]
 struct Board {
   board: Vec<bool>,
   survive: Vec<uint>,
