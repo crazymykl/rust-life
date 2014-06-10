@@ -115,7 +115,7 @@ impl Board {
       self.cell_live(x-1, y+0),                         self.cell_live(x+1, y+0),
       self.cell_live(x-1, y+1), self.cell_live(x, y+1), self.cell_live(x+1, y+1),
     ];
-    neighbors.iter().count(|&x| x)
+    neighbors.iter().filter(|&x| *x).count()
   }
 
   fn successor_cell(&self, cell:uint) -> bool {
