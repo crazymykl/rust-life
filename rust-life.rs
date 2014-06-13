@@ -6,7 +6,7 @@ extern crate test;
 
 use std::{cmp, str, fmt, rt, option, io};
 use std::rand::{task_rng, Rng};
-use sync::{Arc, Future};
+use std::sync::{Arc, Future};
 
 #[cfg(test)]
 use test::Bencher;
@@ -86,7 +86,7 @@ impl Board {
     let all_tasks: Vec<uint> = range(0, length).collect();
     let tasks: Vec<&[uint]> = all_tasks.as_slice().chunks(length / num_tasks).collect();
 
-    fn future_batch(task_brd: Arc<Board>, task: ~[uint]) -> Future<Vec<bool>> {
+    fn future_batch(task_brd: Arc<Board>, task: Vec<uint>) -> Future<Vec<bool>> {
       Future::spawn(proc()
         task.iter().map(|&idx| task_brd.successor_cell(idx)).collect()
       )
