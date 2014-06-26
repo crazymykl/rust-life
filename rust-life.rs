@@ -4,7 +4,7 @@ extern crate sync;
 #[cfg(test)]
 extern crate test;
 
-use std::{cmp, str, fmt, rt, option, io};
+use std::{cmp, str, fmt, rt, option};
 use std::rand::{task_rng, Rng};
 use std::sync::{Arc, Future};
 
@@ -14,9 +14,10 @@ use test::Bencher;
 static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
 
+#[cfg(not(test))]
 fn main() {
   let mut brd = Board::new(65, 248).random();
-  let mut timer = io::Timer::new().unwrap();
+  let mut timer = std::io::Timer::new().unwrap();
 
   let periodic = timer.periodic(64);
   loop {
@@ -221,7 +222,7 @@ fn bench_random(b: &mut Bencher) {
 fn bench_ten_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(||
-    for _ in range(0,10) { brd = brd.next_generation() }
+    for _ in range(0,10u) { brd = brd.next_generation() }
   );
 }
 
@@ -229,6 +230,6 @@ fn bench_ten_generations(b: &mut Bencher) {
 fn bench_ten_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(||
-    for _ in range(0,10) { brd = brd.parallel_next_generation() }
+    for _ in range(0,10u) { brd = brd.parallel_next_generation() }
   );
 }
