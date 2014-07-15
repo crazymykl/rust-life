@@ -185,7 +185,7 @@ fn testing_board(n: uint) -> Board {
 
 #[test]
 fn test_board_str_conversion() {
-  assert_eq!(testing_board(0).to_str(), test_boards[0].to_string());
+  assert_eq!(testing_board(0).to_string(), test_boards[0].to_string());
 }
 
 #[test]
