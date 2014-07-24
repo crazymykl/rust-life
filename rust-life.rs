@@ -4,7 +4,7 @@ extern crate sync;
 #[cfg(test)]
 extern crate test;
 
-use std::{cmp, str, fmt, rt, option};
+use std::{cmp, fmt, rt, option};
 use std::rand::{task_rng, Rng};
 use std::sync::{Arc, Future};
 
@@ -94,7 +94,7 @@ impl Board {
     }
 
     let future_batches: Vec<Future<Vec<bool>>> = tasks.move_iter().map(|task| {
-      future_batch(shared_brd.clone(), task.to_owned())
+      future_batch(shared_brd.clone(), task.to_vec())
     }).collect();
 
     let mut new_brd: Vec<bool> = Vec::with_capacity(length);
@@ -107,7 +107,7 @@ impl Board {
   }
 
   fn cell_live(&self, x: uint, y: uint) -> bool {
-    !(x >= self.cols || y >= self.rows) && *self.board.get(y * self.cols + x)
+    !(x >= self.cols || y >= self.rows) && self.board[y * self.cols + x]
   }
 
   fn living_neighbors(&self, x: uint, y: uint) -> uint {
@@ -134,7 +134,7 @@ impl Board {
 
   fn from_str(string: &str) -> Option<Board> {
     let rows: Vec<&str> = string.split_terminator('\n').collect();
-    let (row_cnt, col_cnt) = (rows.get(0).len(), rows.len());
+    let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
 
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
@@ -160,7 +160,7 @@ impl fmt::Show for Board {
       let chars: Vec<char> = row.iter().map(|&cell|
         if cell {LIVE_CELL} else {DEAD_CELL}
       ).collect();
-      str::from_chars(chars.as_slice())
+      String::from_chars(chars.as_slice())
     }
 
     let rows: Vec<String> = self.board.as_slice().chunks(self.cols).map(|row|
