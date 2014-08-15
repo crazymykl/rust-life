@@ -9,26 +9,14 @@ use std::rand::{task_rng, Rng};
 use std::sync::{Arc, Future};
 
 #[cfg(test)]
-use test::Bencher;
+use self::test::Bencher;
 
 static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
 
-#[cfg(not(test))]
-fn main() {
-  let mut brd = Board::new(65, 248).random();
-  let mut timer = std::io::Timer::new().unwrap();
-
-  let periodic = timer.periodic(std::time::Duration::milliseconds(64));
-  loop {
-    println!("\x1b[H\x1b[2J{}", brd);
-    periodic.recv();
-    brd = brd.parallel_next_generation();
-  }
-}
 
 #[deriving(PartialEq, Eq, Clone)]
-struct Board {
+pub struct Board {
   board: Vec<bool>,
   survive: Vec<uint>,
   born: Vec<uint>,
@@ -37,7 +25,7 @@ struct Board {
 }
 
 impl Board {
-  fn new(rows: uint, cols: uint) -> Board {
+  pub fn new(rows: uint, cols: uint) -> Board {
     let born = vec![3];
     let survive = vec![2, 3];
 
@@ -68,7 +56,7 @@ impl Board {
             cols   : self.cols }
   }
 
-  fn random(&self) -> Board {
+  pub fn random(&self) -> Board {
     let board = task_rng().gen_iter::<bool>().take(self.len()).collect();
 
     self.next_board(board)
@@ -80,7 +68,7 @@ impl Board {
     self.next_board(new_brd)
   }
 
-  fn parallel_next_generation(&self) -> Board {
+  pub fn parallel_next_generation(&self) -> Board {
     let length = self.len();
     let num_tasks = cmp::min(rt::default_sched_threads(), length);
     let shared_brd = Arc::new(self.clone());
