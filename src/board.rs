@@ -1,19 +1,15 @@
-extern crate rand;
-extern crate sync;
-
 #[cfg(test)]
 extern crate test;
 
-use std::{cmp, fmt, rt, option};
+use std::{fmt, option, rt};
 use std::rand::{task_rng, Rng};
-use std::sync::{Arc, Future};
+use std::sync::{Arc, TaskPool, RWLock, Semaphore};
 
 #[cfg(test)]
 use self::test::Bencher;
 
 static LIVE_CELL: char = '@';
 static DEAD_CELL: char = '.';
-
 
 #[deriving(PartialEq, Eq, Clone)]
 pub struct Board {
@@ -22,6 +18,82 @@ pub struct Board {
   born: Vec<uint>,
   rows: uint,
   cols: uint
+}
+
+pub struct WorkerPool {
+  pool: TaskPool<()>,
+  size: uint
+}
+
+impl WorkerPool {
+  pub fn new(size: uint) -> WorkerPool {
+    WorkerPool {
+      pool: TaskPool::new(size, || proc(_) {}),
+      size: size
+    }
+  }
+
+  pub fn new_with_default_size() -> WorkerPool {
+    WorkerPool::new(rt::default_sched_threads())
+  }
+}
+
+struct FutureBoard {
+  board: Vec<Vec<bool>>,
+  tasks_done: uint,
+}
+
+impl FutureBoard {
+  fn cells(&self) -> Vec<bool> {
+    self.board.as_slice().concat_vec()
+  }
+}
+
+struct BoardAdvancer {
+  board: Board,
+  next_board: RWLock<FutureBoard>,
+  done: Semaphore
+}
+
+impl BoardAdvancer {
+  fn new(board: &Board, num_tasks: uint) -> BoardAdvancer {
+    BoardAdvancer {
+      board: board.clone(),
+      next_board: RWLock::new(FutureBoard {
+        board: Vec::from_elem(num_tasks, vec![]),
+        tasks_done: 0
+      }),
+      done: Semaphore::new(0)
+    }
+  }
+
+  fn advance(board: &Board, workers: &mut WorkerPool) -> Vec<bool> {
+    let shared_board = Arc::new(BoardAdvancer::new(board, workers.size));
+    let length = board.len();
+    let all_tasks: Vec<uint> = range(0, length).collect();
+    let tasks: Vec<&[uint]> = all_tasks.as_slice().chunks((length + workers.size - 1) / workers.size).collect();
+    let task_count = tasks.clone().iter().len();
+
+    for (i, task) in tasks.iter().enumerate() {
+      let task_board = shared_board.clone();
+      let task = task.to_vec();
+
+      workers.pool.execute(proc(_) {
+        let task_values = task.iter().map(|&idx|
+          task_board.board.successor_cell(idx)
+        ).collect::<Vec<bool>>();
+        let mut task_results = task_board.next_board.write();
+        *task_results.board.get_mut(i) = task_values;
+        task_results.tasks_done += 1;
+        if task_results.tasks_done == task_count { task_board.done.release(); }
+      });
+
+    };
+    shared_board.done.acquire();
+    shared_board.next_board.read().cells()
+  }
+
+
 }
 
 impl Board {
@@ -68,28 +140,8 @@ impl Board {
     self.next_board(new_brd)
   }
 
-  pub fn parallel_next_generation(&self) -> Board {
-    let length = self.len();
-    let num_tasks = cmp::min(rt::default_sched_threads(), length);
-    let shared_brd = Arc::new(self.clone());
-    let all_tasks: Vec<uint> = range(0, length).collect();
-    let tasks: Vec<&[uint]> = all_tasks.as_slice().chunks(length / num_tasks).collect();
-
-    fn future_batch(task_brd: Arc<Board>, task: Vec<uint>) -> Future<Vec<bool>> {
-      Future::spawn(proc()
-        task.iter().map(|&idx| task_brd.successor_cell(idx)).collect()
-      )
-    }
-
-    let future_batches: Vec<Future<Vec<bool>>> = tasks.move_iter().map(|task| {
-      future_batch(shared_brd.clone(), task.to_vec())
-    }).collect();
-
-    let mut new_brd: Vec<bool> = Vec::with_capacity(length);
-
-    for b in future_batches.move_iter() {
-      new_brd.push_all_move(b.unwrap());
-    }
+  pub fn parallel_next_generation(&self, workers: &mut WorkerPool) -> Board {
+    let new_brd = BoardAdvancer::advance(self, workers);
 
     self.next_board(new_brd)
   }
@@ -197,7 +249,9 @@ fn test_next_generation() {
 
 #[test]
 fn test_parallel_next_generation() {
-  assert_eq!(testing_board(1).parallel_next_generation(), testing_board(2));
+  let ref mut workers = WorkerPool::new_with_default_size();
+
+  assert_eq!(testing_board(1).parallel_next_generation(workers), testing_board(2));
 }
 
 #[bench]
@@ -211,13 +265,16 @@ fn bench_ten_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   b.iter(||
     for _ in range(0,10u) { brd = brd.next_generation() }
+
   );
 }
 
 #[bench]
 fn bench_ten_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
-  b.iter(||
-    for _ in range(0,10u) { brd = brd.parallel_next_generation() }
-  );
+  let ref mut workers = WorkerPool::new_with_default_size();
+
+  b.iter(|| {
+    for _ in range(0,10u) { brd = brd.parallel_next_generation(workers) }
+  });
 }
