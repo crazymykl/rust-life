@@ -1,7 +1,7 @@
 #[cfg(test)]
 extern crate test;
 
-use std::{fmt, option, rt};
+use std::{fmt, rt};
 use std::rand::{task_rng, Rng};
 use std::sync::{Arc, TaskPool, RWLock, Semaphore};
 
@@ -178,13 +178,12 @@ impl Board {
 
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
-    let brd = option::collect(
-      rows.concat().into_bytes().move_iter().map(|c| match c as char {
+    let brd: Option<Vec<bool>> = rows.concat().into_bytes()
+      .move_iter().map(|c| match c as char {
         LIVE_CELL => Some(true),
         DEAD_CELL => Some(false),
         _         => None
-      })
-    );
+      }).collect();
 
     match brd {
       Some(board) => Some(Board::new(row_cnt, col_cnt).next_board(board)),
