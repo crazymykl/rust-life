@@ -8,8 +8,8 @@ use std::sync::{Arc, TaskPool, RWLock, Semaphore};
 #[cfg(test)]
 use self::test::Bencher;
 
-static LIVE_CELL: char = '@';
-static DEAD_CELL: char = '.';
+const LIVE_CELL: char = '@';
+const DEAD_CELL: char = '.';
 
 #[deriving(PartialEq, Eq, Clone)]
 pub struct Board {
@@ -179,7 +179,7 @@ impl Board {
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
     let brd: Option<Vec<bool>> = rows.concat().into_bytes()
-      .move_iter().map(|c| match c as char {
+      .into_iter().map(|c| match c as char {
         LIVE_CELL => Some(true),
         DEAD_CELL => Some(false),
         _         => None
@@ -211,7 +211,7 @@ impl fmt::Show for Board {
 }
 
 #[cfg(test)]
-static test_boards: [&'static str, ..3] = [
+const TEST_BOARDS: [&'static str, ..3] = [
   ".@.\n.@@\n.@@",
   "...\n@@@\n...",
   ".@.\n.@.\n.@."
@@ -219,12 +219,12 @@ static test_boards: [&'static str, ..3] = [
 
 #[cfg(test)]
 fn testing_board(n: uint) -> Board {
-  Board::from_str(test_boards[n]).unwrap()
+  Board::from_str(TEST_BOARDS[n]).unwrap()
 }
 
 #[test]
 fn test_board_str_conversion() {
-  assert_eq!(testing_board(0).to_string(), test_boards[0].to_string());
+  assert_eq!(testing_board(0).to_string(), TEST_BOARDS[0].to_string());
 }
 
 #[test]
