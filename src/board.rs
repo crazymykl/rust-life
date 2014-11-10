@@ -83,7 +83,7 @@ impl BoardAdvancer {
           task_board.board.successor_cell(idx)
         ).collect::<Vec<bool>>();
         let mut task_results = task_board.next_board.write();
-        *task_results.board.get_mut(i) = task_values;
+        task_results.board[i] = task_values;
         task_results.tasks_done += 1;
         if task_results.tasks_done == task_count { task_board.done.release(); }
       });
