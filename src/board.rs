@@ -21,14 +21,14 @@ pub struct Board {
 }
 
 pub struct WorkerPool {
-  pool: TaskPool<()>,
+  pool: TaskPool,
   size: uint
 }
 
 impl WorkerPool {
   pub fn new(size: uint) -> WorkerPool {
     WorkerPool {
-      pool: TaskPool::new(size, || proc(_) {}),
+      pool: TaskPool::new(size),
       size: size
     }
   }
@@ -78,7 +78,7 @@ impl BoardAdvancer {
       let task_board = shared_board.clone();
       let task = task.to_vec();
 
-      workers.pool.execute(proc(_) {
+      workers.pool.execute(proc() {
         let task_values = task.iter().map(|&idx|
           task_board.board.successor_cell(idx)
         ).collect::<Vec<bool>>();
