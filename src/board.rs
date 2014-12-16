@@ -78,7 +78,7 @@ impl BoardAdvancer {
       let task_board = shared_board.clone();
       let task = task.to_vec();
 
-      workers.pool.execute(proc() {
+      workers.pool.execute(move || {
         let task_values = task.iter().map(|&idx|
           task_board.board.successor_cell(idx)
         ).collect::<Vec<bool>>();
