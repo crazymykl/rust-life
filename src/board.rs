@@ -2,8 +2,9 @@
 extern crate test;
 
 use std::{fmt, rt};
-use std::rand::{task_rng, Rng};
+use std::rand::{thread_rng, Rng};
 use std::sync::{Arc, TaskPool, RWLock, Semaphore};
+use std::iter::repeat;
 
 #[cfg(test)]
 use self::test::Bencher;
@@ -11,7 +12,7 @@ use self::test::Bencher;
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
 
-#[deriving(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Board {
   board: Vec<bool>,
   survive: Vec<uint>,
@@ -45,7 +46,7 @@ struct FutureBoard {
 
 impl FutureBoard {
   fn cells(&self) -> Vec<bool> {
-    self.board.as_slice().concat_vec()
+    self.board.as_slice().concat()
   }
 }
 
@@ -60,7 +61,7 @@ impl BoardAdvancer {
     BoardAdvancer {
       board: board.clone(),
       next_board: RWLock::new(FutureBoard {
-        board: Vec::from_elem(num_tasks, vec![]),
+        board: repeat(vec![]).take(num_tasks).collect(),
         tasks_done: 0
       }),
       done: Semaphore::new(0)
@@ -82,7 +83,7 @@ impl BoardAdvancer {
         let task_values = task.iter().map(|&idx|
           task_board.board.successor_cell(idx)
         ).collect::<Vec<bool>>();
-        let mut task_results = task_board.next_board.write();
+        let mut task_results = task_board.next_board.write().unwrap();
         task_results.board[i] = task_values;
         task_results.tasks_done += 1;
         if task_results.tasks_done == task_count { task_board.done.release(); }
@@ -90,7 +91,7 @@ impl BoardAdvancer {
 
     };
     shared_board.done.acquire();
-    shared_board.next_board.read().cells()
+    shared_board.next_board.read().unwrap().cells()
   }
 
 
@@ -105,7 +106,7 @@ impl Board {
   }
 
   fn new_with_custom_rules(rows: uint, cols: uint, born: Vec<uint>, survive: Vec<uint>) -> Board {
-    let new_board = Vec::from_elem(rows * cols, false);
+    let new_board = repeat(false).take(rows * cols).collect();
 
     Board { board  : new_board,
             born   : born,
@@ -129,13 +130,13 @@ impl Board {
   }
 
   pub fn random(&self) -> Board {
-    let board = task_rng().gen_iter::<bool>().take(self.len()).collect();
+    let board = thread_rng().gen_iter::<bool>().take(self.len()).collect();
 
     self.next_board(board)
   }
 
   fn next_generation(&self) -> Board {
-    let new_brd = Vec::from_fn(self.len(), |cell| self.successor_cell(cell));
+    let new_brd = (0..self.len()).map(|cell| self.successor_cell(cell)).collect();
 
     self.next_board(new_brd)
   }
@@ -178,8 +179,9 @@ impl Board {
 
     if rows.iter().any(|x| x.len() != row_cnt) { return None; };
 
-    let brd: Option<Vec<bool>> = rows.concat().into_bytes()
-      .into_iter().map(|c| match c as char {
+    let chars: String = rows.concat();
+
+    let brd: Option<Vec<bool>> = chars.chars().map(|c| match c {
         LIVE_CELL => Some(true),
         DEAD_CELL => Some(false),
         _         => None
@@ -196,10 +198,9 @@ impl fmt::Show for Board {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 
     fn row_to_str(row: &[bool]) -> String {
-      let chars: Vec<char> = row.iter().map(|&cell|
+      row.iter().map(|&cell|
         if cell {LIVE_CELL} else {DEAD_CELL}
-      ).collect();
-      String::from_chars(chars.as_slice())
+      ).collect()
     }
 
     let rows: Vec<String> = self.board.as_slice().chunks(self.cols).map(|row|
@@ -211,7 +212,7 @@ impl fmt::Show for Board {
 }
 
 #[cfg(test)]
-const TEST_BOARDS: [&'static str, ..3] = [
+const TEST_BOARDS: [&'static str; 3] = [
   ".@.\n.@@\n.@@",
   "...\n@@@\n...",
   ".@.\n.@.\n.@."

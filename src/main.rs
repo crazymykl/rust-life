@@ -1,3 +1,5 @@
+#![feature(slicing_syntax)]
+
 mod board;
 
 #[cfg(not(test))]
