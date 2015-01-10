@@ -3,7 +3,7 @@ extern crate test;
 
 use std::{fmt, rt};
 use std::rand::{thread_rng, Rng};
-use std::sync::{Arc, TaskPool, RWLock, Semaphore};
+use std::sync::{Arc, TaskPool, RwLock, Semaphore};
 use std::iter::repeat;
 
 #[cfg(test)]
@@ -15,19 +15,19 @@ const DEAD_CELL: char = '.';
 #[derive(PartialEq, Eq, Clone)]
 pub struct Board {
   board: Vec<bool>,
-  survive: Vec<uint>,
-  born: Vec<uint>,
-  rows: uint,
-  cols: uint
+  survive: Vec<usize>,
+  born: Vec<usize>,
+  rows: usize,
+  cols: usize
 }
 
 pub struct WorkerPool {
   pool: TaskPool,
-  size: uint
+  size: usize
 }
 
 impl WorkerPool {
-  pub fn new(size: uint) -> WorkerPool {
+  pub fn new(size: usize) -> WorkerPool {
     WorkerPool {
       pool: TaskPool::new(size),
       size: size
@@ -41,26 +41,26 @@ impl WorkerPool {
 
 struct FutureBoard {
   board: Vec<Vec<bool>>,
-  tasks_done: uint,
+  tasks_done: usize,
 }
 
 impl FutureBoard {
   fn cells(&self) -> Vec<bool> {
-    self.board.as_slice().concat()
+    self.board.concat()
   }
 }
 
 struct BoardAdvancer {
   board: Board,
-  next_board: RWLock<FutureBoard>,
+  next_board: RwLock<FutureBoard>,
   done: Semaphore
 }
 
 impl BoardAdvancer {
-  fn new(board: &Board, num_tasks: uint) -> BoardAdvancer {
+  fn new(board: &Board, num_tasks: usize) -> BoardAdvancer {
     BoardAdvancer {
       board: board.clone(),
-      next_board: RWLock::new(FutureBoard {
+      next_board: RwLock::new(FutureBoard {
         board: repeat(vec![]).take(num_tasks).collect(),
         tasks_done: 0
       }),
@@ -71,9 +71,9 @@ impl BoardAdvancer {
   fn advance(board: &Board, workers: &mut WorkerPool) -> Vec<bool> {
     let shared_board = Arc::new(BoardAdvancer::new(board, workers.size));
     let length = board.len();
-    let all_tasks: Vec<uint> = range(0, length).collect();
-    let tasks: Vec<&[uint]> = all_tasks.as_slice().chunks((length + workers.size - 1) / workers.size).collect();
-    let task_count = tasks.clone().iter().len();
+    let all_tasks: Vec<usize> = (0..length).collect();
+    let tasks: Vec<&[usize]> = all_tasks.chunks((length as usize + workers.size - 1) / workers.size).collect();
+    let task_count = tasks.clone().len();
 
     for (i, task) in tasks.iter().enumerate() {
       let task_board = shared_board.clone();
@@ -98,14 +98,14 @@ impl BoardAdvancer {
 }
 
 impl Board {
-  pub fn new(rows: uint, cols: uint) -> Board {
+  pub fn new(rows: usize, cols: usize) -> Board {
     let born = vec![3];
     let survive = vec![2, 3];
 
     Board::new_with_custom_rules(rows, cols, born, survive)
   }
 
-  fn new_with_custom_rules(rows: uint, cols: uint, born: Vec<uint>, survive: Vec<uint>) -> Board {
+  fn new_with_custom_rules(rows: usize, cols: usize, born: Vec<usize>, survive: Vec<usize>) -> Board {
     let new_board = repeat(false).take(rows * cols).collect();
 
     Board { board  : new_board,
@@ -115,7 +115,7 @@ impl Board {
             cols   : cols }
   }
 
-  fn len(&self) -> uint {
+  fn len(&self) -> usize {
     self.rows * self.cols
   }
 
@@ -147,11 +147,11 @@ impl Board {
     self.next_board(new_brd)
   }
 
-  fn cell_live(&self, x: uint, y: uint) -> bool {
+  fn cell_live(&self, x: usize, y: usize) -> bool {
     !(x >= self.cols || y >= self.rows) && self.board[y * self.cols + x]
   }
 
-  fn living_neighbors(&self, x: uint, y: uint) -> uint {
+  fn living_neighbors(&self, x: usize, y: usize) -> usize {
     let neighbors = [
       self.cell_live(x-1, y-1), self.cell_live(x, y-1), self.cell_live(x+1, y-1),
       self.cell_live(x-1, y+0),                         self.cell_live(x+1, y+0),
@@ -160,11 +160,11 @@ impl Board {
     neighbors.iter().filter(|&x| *x).count()
   }
 
-  fn successor_cell(&self, cell:uint) -> bool {
+  fn successor_cell(&self, cell: usize) -> bool {
     self.successor(cell % self.cols, cell / self.cols)
   }
 
-  fn successor(&self, x:uint, y:uint) -> bool {
+  fn successor(&self, x:usize, y:usize) -> bool {
     let neighbors = self.living_neighbors(x, y);
     if self.cell_live(x, y) {
       self.survive.contains(&neighbors)
@@ -203,7 +203,7 @@ impl fmt::Show for Board {
       ).collect()
     }
 
-    let rows: Vec<String> = self.board.as_slice().chunks(self.cols).map(|row|
+    let rows: Vec<String> = self.board.chunks(self.cols).map(|row|
       row_to_str(row)
     ).collect();
 
@@ -219,13 +219,13 @@ const TEST_BOARDS: [&'static str; 3] = [
 ];
 
 #[cfg(test)]
-fn testing_board(n: uint) -> Board {
+fn testing_board(n: usize) -> Board {
   Board::from_str(TEST_BOARDS[n]).unwrap()
 }
 
 #[test]
 fn test_board_str_conversion() {
-  assert_eq!(testing_board(0).to_string(), TEST_BOARDS[0].to_string());
+  assert_eq!(format!("{:?}", testing_board(0)), TEST_BOARDS[0]);
 }
 
 #[test]
@@ -263,10 +263,7 @@ fn bench_random(b: &mut Bencher) {
 #[bench]
 fn bench_ten_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
-  b.iter(||
-    for _ in range(0,10u) { brd = brd.next_generation() }
-
-  );
+  b.iter(|| for _ in (0..10) { brd = brd.next_generation(); });
 }
 
 #[bench]
@@ -274,7 +271,5 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
   let mut brd = Board::new(200,200).random();
   let ref mut workers = WorkerPool::new_with_default_size();
 
-  b.iter(|| {
-    for _ in range(0,10u) { brd = brd.parallel_next_generation(workers) }
-  });
+  b.iter(|| for _ in (0..10) { brd = brd.parallel_next_generation(workers); });
 }
