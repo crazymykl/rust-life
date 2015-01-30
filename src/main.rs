@@ -3,7 +3,7 @@ mod board;
 #[cfg(not(test))]
 fn main() {
   let mut brd = board::Board::new(65, 248).random();
-  let mut timer = std::io::Timer::new().unwrap();
+  let mut timer = std::old_io::Timer::new().unwrap();
   let ref mut worker_pool = board::WorkerPool::new_with_default_size();
   let periodic = timer.periodic(std::time::Duration::milliseconds(64));
   loop {
