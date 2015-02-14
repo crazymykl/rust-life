@@ -12,7 +12,7 @@ use self::test::Bencher;
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Board {
   board: Vec<bool>,
   survive: Vec<usize>,
@@ -91,7 +91,8 @@ impl BoardAdvancer {
 
     };
     shared_board.done.acquire();
-    shared_board.next_board.read().unwrap().cells()
+    let next_board = shared_board.next_board.read().unwrap();
+    next_board.cells()
   }
 
 
@@ -194,7 +195,7 @@ impl Board {
   }
 }
 
-impl fmt::Show for Board {
+impl fmt::Display for Board {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 
     fn row_to_str(row: &[bool]) -> String {
@@ -225,7 +226,7 @@ fn testing_board(n: usize) -> Board {
 
 #[test]
 fn test_board_str_conversion() {
-  assert_eq!(format!("{:?}", testing_board(0)), TEST_BOARDS[0]);
+  assert_eq!(format!("{}", testing_board(0)), TEST_BOARDS[0]);
 }
 
 #[test]
