@@ -1,7 +1,1 @@
-language: c
-install:
-  - curl https://static.rust-lang.org/rustup.sh | sudo sh -
-script:
-  - cargo build --verbose
-  - cargo test --verbose
-  - cargo bench --verbose
+language: rust
