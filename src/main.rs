@@ -1,4 +1,8 @@
-#![feature(std_misc, old_io, os, rand, test, core)]
+#![feature(std_misc, test, old_io)]
+
+extern crate threadpool;
+extern crate rand;
+extern crate num_cpus;
 
 mod board;
 

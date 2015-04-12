@@ -1,10 +1,13 @@
 #[cfg(test)]
 extern crate test;
 
-use std::{fmt, os};
-use std::rand::{thread_rng, Rng};
-use std::sync::{Arc, TaskPool, RwLock, Semaphore};
+use std::fmt;
+use rand::{thread_rng, Rng};
+use std::sync::{Arc, RwLock, Semaphore};
 use std::iter::repeat;
+use std::num::Wrapping;
+use threadpool::ThreadPool;
+use num_cpus;
 
 #[cfg(test)]
 use self::test::Bencher;
@@ -22,20 +25,20 @@ pub struct Board {
 }
 
 pub struct WorkerPool {
-  pool: TaskPool,
+  pool: ThreadPool,
   size: usize
 }
 
 impl WorkerPool {
   pub fn new(size: usize) -> WorkerPool {
     WorkerPool {
-      pool: TaskPool::new(size),
+      pool: ThreadPool::new(size),
       size: size
     }
   }
 
   pub fn new_with_default_size() -> WorkerPool {
-    WorkerPool::new(os::num_cpus())
+    WorkerPool::new(num_cpus::get())
   }
 }
 
