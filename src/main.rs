@@ -1,4 +1,4 @@
-#![feature(std_misc, io, collections, test)]
+#![feature(std_misc, old_io, os, rand, test, core)]
 
 mod board;
 

@@ -1,7 +1,7 @@
 #[cfg(test)]
 extern crate test;
 
-use std::{fmt, rt};
+use std::{fmt, os};
 use std::rand::{thread_rng, Rng};
 use std::sync::{Arc, TaskPool, RwLock, Semaphore};
 use std::iter::repeat;
@@ -35,7 +35,7 @@ impl WorkerPool {
   }
 
   pub fn new_with_default_size() -> WorkerPool {
-    WorkerPool::new(rt::default_sched_threads())
+    WorkerPool::new(os::num_cpus())
   }
 }
 
@@ -72,7 +72,7 @@ impl BoardAdvancer {
     let shared_board = Arc::new(BoardAdvancer::new(board, workers.size));
     let length = board.len();
     let all_tasks: Vec<usize> = (0..length).collect();
-    let tasks: Vec<&[usize]> = all_tasks.chunks((length as usize + workers.size - 1) / workers.size).collect();
+    let tasks: Vec<&[usize]> = all_tasks.chunks((length + workers.size - 1) / workers.size).collect();
     let task_count = tasks.clone().len();
 
     for (i, task) in tasks.iter().enumerate() {
@@ -153,10 +153,12 @@ impl Board {
   }
 
   fn living_neighbors(&self, x: usize, y: usize) -> usize {
+    let Wrapping(x_1) = Wrapping(x) - Wrapping(1);
+    let Wrapping(y_1) = Wrapping(y) - Wrapping(1);
     let neighbors = [
-      self.cell_live(x-1, y-1), self.cell_live(x, y-1), self.cell_live(x+1, y-1),
-      self.cell_live(x-1, y+0),                         self.cell_live(x+1, y+0),
-      self.cell_live(x-1, y+1), self.cell_live(x, y+1), self.cell_live(x+1, y+1),
+      self.cell_live(x_1, y_1), self.cell_live(x, y_1), self.cell_live(x+1, y_1),
+      self.cell_live(x_1, y+0),                         self.cell_live(x+1, y+0),
+      self.cell_live(x_1, y+1), self.cell_live(x, y+1), self.cell_live(x+1, y+1),
     ];
     neighbors.iter().filter(|&x| *x).count()
   }
