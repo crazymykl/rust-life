@@ -9,3 +9,4 @@ authors = ["Mike MacDonald <crazymykl@gmail.com>"]
 threadpool = "0.1"
 rand = "0.3"
 num_cpus = "0.1"
+snooze-rs = "0.0.2"
