@@ -198,6 +198,13 @@ impl Board {
             None        => None
         }
     }
+    
+    pub fn cells(&self) -> Vec<(usize, usize, bool)> {
+        self.board.iter()
+            .enumerate()
+            .map(|(i, v)| (i % self.cols, i / self.cols, *v))
+            .collect()
+    }
 }
 
 impl fmt::Display for Board {
