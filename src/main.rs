@@ -17,7 +17,7 @@ use piston::event::*;
 
 mod board;
 
-const SCALE: f64 = 3.0;
+const SCALE: f64 = 2.0;
 const X_SZ: u32 = 800;
 const Y_SZ: u32 = 600;
 
@@ -49,7 +49,7 @@ fn main() {
                 _          => {}
             };
         }
-        
+
         if let Some(args) = e.render_args() {
             gl.draw(args.viewport(), |c, g| {
                 graphics::clear([0.0; 4], g);
@@ -60,10 +60,13 @@ fn main() {
                         &c.draw_state, c.transform, g
                     );
                 }
-                if running {
-                    brd = brd.parallel_next_generation(worker_pool);
-                }
             });
+        }
+
+        if let Some(args) = e.update_args() {
+            if running {
+                brd = brd.parallel_next_generation(worker_pool);
+            }
         }
     }
 }
