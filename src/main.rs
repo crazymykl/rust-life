@@ -45,6 +45,7 @@ fn main() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
             match key {
                 Key::R     => brd = brd.random(),
+                Key::S     => brd = brd.parallel_next_generation(worker_pool),
                 Key::Space => running = !running,
                 _          => {}
             };
