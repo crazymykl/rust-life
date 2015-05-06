@@ -13,13 +13,14 @@ use opengl_graphics::{GlGraphics, OpenGL};
 use glutin_window::GlutinWindow as Window;
 use piston::window::{AdvancedWindow, WindowSettings};
 use piston::input::{Key, Button};
+use piston::input::mouse::MouseButton;
 use piston::event::*;
 
 mod board;
 
 const SCALE: f64 = 2.0;
-const X_SZ: u32 = 800;
-const Y_SZ: u32 = 600;
+const X_SZ: u32 = 1280;
+const Y_SZ: u32 = 800;
 
 fn scale_dimension(x: u32) -> usize {
     (x as f64 / SCALE).floor() as usize
@@ -40,14 +41,25 @@ fn main() {
     let ref mut gl = GlGraphics::new(opengl);
     let rect = graphics::Rectangle::new([1.0; 4]);
     let mut running = true;
+    let mut cursor = [0.0, 0.0];
 
     for e in window.events() {
-        if let Some(Button::Keyboard(key)) = e.press_args() {
-            match key {
-                Key::R     => brd = brd.random(),
-                Key::S     => brd = brd.parallel_next_generation(worker_pool),
-                Key::Space => running = !running,
-                _          => {}
+        e.mouse_cursor(|x, y| {
+            cursor = [x, y];
+        });
+
+        if let Some(btn) = e.press_args() {
+            match btn {
+                Button::Mouse(MouseButton::Left) => {
+                    let (x, y) = ((cursor[0] / SCALE).floor() as usize - 1
+                                , (cursor[1] / SCALE).floor() as usize - 1);
+                    brd = brd.toggle(x, y);
+                },
+                Button::Keyboard(Key::C)         => brd = brd.clear(),
+                Button::Keyboard(Key::R)         => brd = brd.random(),
+                Button::Keyboard(Key::S)         => brd = brd.parallel_next_generation(worker_pool),
+                Button::Keyboard(Key::Space)     => running = !running,
+                _                                => {}
             };
         }
 
@@ -64,7 +76,7 @@ fn main() {
             });
         }
 
-        if let Some(args) = e.update_args() {
+        if let Some(_) = e.update_args() {
             if running {
                 brd = brd.parallel_next_generation(worker_pool);
             }

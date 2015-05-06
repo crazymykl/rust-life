@@ -179,6 +179,20 @@ impl Board {
         }
     }
 
+    pub fn toggle(&self, x:usize, y:usize) -> Board {
+        if x < self.rows && y < self.cols {
+            let mut board = self.board.clone();
+            board[x * self.cols + y] = !board[x * self.cols + y];
+            self.next_board(board)
+        } else {
+            self.clone()
+        }
+    }
+
+    pub fn clear(self) -> Board {
+        Board::new(self.rows, self.cols)
+    }
+
     fn from_str(string: &str) -> Option<Board> {
         let rows: Vec<&str> = string.split_terminator('\n').collect();
         let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
@@ -198,7 +212,7 @@ impl Board {
             None        => None
         }
     }
-    
+
     pub fn cells(&self) -> Vec<(usize, usize, bool)> {
         self.board.iter()
             .enumerate()
