@@ -1,4 +1,4 @@
-#![feature(std_misc, test)]
+#![feature(test)]
 
 extern crate threadpool;
 extern crate rand;

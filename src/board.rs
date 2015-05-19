@@ -3,7 +3,7 @@ extern crate test;
 
 use std::fmt;
 use rand::{thread_rng, Rng};
-use std::sync::{Arc, RwLock, Semaphore};
+use std::sync::{Arc, RwLock, Barrier};
 use std::iter::repeat;
 use std::num::Wrapping;
 use threadpool::ThreadPool;
@@ -42,32 +42,16 @@ impl WorkerPool {
     }
 }
 
-struct FutureBoard {
-    board: Vec<Vec<bool>>,
-    tasks_done: usize,
-}
-
-impl FutureBoard {
-    fn cells(&self) -> Vec<bool> {
-        self.board.concat()
-    }
-}
-
 struct BoardAdvancer {
     board: Board,
-    next_board: RwLock<FutureBoard>,
-    done: Semaphore
+    next_cells: RwLock<Vec<Vec<bool>>>
 }
 
 impl BoardAdvancer {
     fn new(board: &Board, num_tasks: usize) -> BoardAdvancer {
         BoardAdvancer {
             board: board.clone(),
-            next_board: RwLock::new(FutureBoard {
-                board: repeat(vec![]).take(num_tasks).collect(),
-                tasks_done: 0
-            }),
-            done: Semaphore::new(0)
+            next_cells: RwLock::new(repeat(vec![]).take(num_tasks).collect()),
         }
     }
 
@@ -75,27 +59,31 @@ impl BoardAdvancer {
         let shared_board = Arc::new(BoardAdvancer::new(board, workers.size));
         let length = board.len();
         let all_tasks: Vec<usize> = (0..length).collect();
-        let tasks: Vec<&[usize]> = all_tasks.chunks((length + workers.size - 1) / workers.size).collect();
-        let task_count = tasks.clone().len();
+        let tasks: Vec<&[usize]> = all_tasks
+            .chunks((length + workers.size - 1) / workers.size)
+            .collect();
+        let barrier = Arc::new(Barrier::new(tasks.clone().len()+1));
 
         for (i, task) in tasks.iter().enumerate() {
             let task_board = shared_board.clone();
             let task = task.to_vec();
+            let done = barrier.clone();
 
             workers.pool.execute(move || {
                 let task_values = task.iter().map(|&idx|
                     task_board.board.successor_cell(idx)
                 ).collect::<Vec<bool>>();
-                let mut task_results = task_board.next_board.write().unwrap();
-                task_results.board[i] = task_values;
-                task_results.tasks_done += 1;
-                if task_results.tasks_done == task_count { task_board.done.release(); }
+                if let Ok(mut task_results) = task_board.next_cells.write() {
+                    task_results[i] = task_values;
+                }
+                done.wait();
             });
 
         };
-        shared_board.done.acquire();
-        let next_board = shared_board.next_board.read().unwrap();
-        next_board.cells()
+
+        barrier.wait();
+        let next_board = shared_board.next_cells.read().unwrap();
+        next_board.concat()
     }
 
 
