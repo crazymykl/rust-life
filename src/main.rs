@@ -1,5 +1,3 @@
-#![feature(test)]
-
 extern crate threadpool;
 extern crate rand;
 extern crate num_cpus;
