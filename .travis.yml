@@ -1,5 +1,8 @@
 language: rust
+rust:
+  - stable
+  - nightly
 before_install:
-    - sudo apt-get update -qq
+  - sudo apt-get update -qq
 install:
-    - sudo apt-get install libXxf86vm-dev
+  - sudo apt-get install libXxf86vm-dev
