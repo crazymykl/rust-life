@@ -56,7 +56,7 @@ impl BoardAdvancer {
         let tasks: Vec<&[usize]> = all_tasks
             .chunks((length + workers.size - 1) / workers.size)
             .collect();
-        let barrier = Arc::new(Barrier::new(tasks.clone().len()+1));
+        let barrier = Arc::new(Barrier::new(tasks.clone().len() + 1));
 
         for (i, task) in tasks.iter().enumerate() {
             let task_board = shared_board.clone();
@@ -121,7 +121,7 @@ impl Board {
         self.next_board(board)
     }
 
-    fn next_generation(&self) -> Board {
+    pub fn next_generation(&self) -> Board {
         let new_brd = (0..self.len()).map(|cell| self.successor_cell(cell)).collect();
 
         self.next_board(new_brd)

@@ -1,3 +1,5 @@
+#![cfg_attr(all(test, feature = "unstable"), feature(test))]
+
 extern crate threadpool;
 extern crate rand;
 extern crate num_cpus;
@@ -13,6 +15,9 @@ use piston::window::{AdvancedWindow, WindowSettings};
 use piston::input::{Key, Button};
 use piston::input::mouse::MouseButton;
 use piston::event::*;
+
+#[cfg(all(test, feature = "unstable"))]
+mod benchmarks;
 
 mod board;
 
@@ -53,10 +58,11 @@ fn main() {
                                 , (cursor[1] / SCALE).floor() as usize - 1);
                     brd = brd.toggle(x, y);
                 },
+                Button::Mouse(MouseButton::Right)
+                | Button::Keyboard(Key::Space)   => running = !running,
                 Button::Keyboard(Key::C)         => brd = brd.clear(),
                 Button::Keyboard(Key::R)         => brd = brd.random(),
                 Button::Keyboard(Key::S)         => brd = brd.parallel_next_generation(worker_pool),
-                Button::Keyboard(Key::Space)     => running = !running,
                 _                                => {}
             };
         }
