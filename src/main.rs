@@ -4,17 +4,9 @@ extern crate threadpool;
 extern crate rand;
 extern crate num_cpus;
 
-extern crate piston;
-extern crate opengl_graphics;
-extern crate graphics;
-extern crate glutin_window;
+extern crate piston_window;
 
-use opengl_graphics::{GlGraphics, OpenGL};
-use glutin_window::GlutinWindow as Window;
-use piston::window::{AdvancedWindow, WindowSettings};
-use piston::input::{Key, Button};
-use piston::input::mouse::MouseButton;
-use piston::event::*;
+use piston_window::*;
 
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
@@ -35,27 +27,24 @@ fn main() {
     let mut brd = board::Board::new(rows, cols).random();
     let ref mut worker_pool = board::WorkerPool::new_with_default_size();
 
-    let opengl = OpenGL::_3_2;
-    let window = Window::new(
-        opengl,
-        WindowSettings::new("Life", [X_SZ, Y_SZ])
+    let opengl = OpenGL::V3_2;
+    let window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
-    );
-    let ref mut gl = GlGraphics::new(opengl);
-    let rect = graphics::Rectangle::new([1.0; 4]);
+        .opengl(opengl)
+        .into();
     let mut running = true;
-    let mut cursor = [0.0, 0.0];
+    let mut cursor = [0, 0];
 
-    for e in window.events() {
+    for e in window {
         e.mouse_cursor(|x, y| {
-            cursor = [x, y];
+            cursor = [x as u32, y as u32];
         });
 
         if let Some(btn) = e.press_args() {
             match btn {
                 Button::Mouse(MouseButton::Left) => {
-                    let (x, y) = ((cursor[0] / SCALE).floor() as usize - 1
-                                , (cursor[1] / SCALE).floor() as usize - 1);
+                    let (x, y) = (scale_dimension(cursor[0]) - 1
+                                , scale_dimension(cursor[1]) - 1);
                     brd = brd.toggle(x, y);
                 },
                 Button::Mouse(MouseButton::Right)
@@ -67,23 +56,22 @@ fn main() {
             };
         }
 
-        if let Some(args) = e.render_args() {
-            gl.draw(args.viewport(), |c, g| {
-                graphics::clear([0.0; 4], g);
+        if let Some(_) = e.render_args() {
+            e.draw_2d(|c, g| {
+                clear([0.0; 4], g);
                 for (x, y, val) in brd.cells() {
                     if !val { continue; }
-                    rect.draw(
+                    rectangle(
+                        [1.0; 4],
                         [y as f64 * SCALE, x as f64 * SCALE, SCALE, SCALE],
-                        &c.draw_state, c.transform, g
+                        c.transform, g
                     );
                 }
             });
         }
 
         if let Some(_) = e.update_args() {
-            if running {
-                brd = brd.parallel_next_generation(worker_pool);
-            }
+            if running { brd = brd.parallel_next_generation(worker_pool); }
         }
     }
 }

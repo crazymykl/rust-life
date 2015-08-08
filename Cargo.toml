@@ -1,7 +1,7 @@
 [package]
 
 name = "rust-life"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Mike MacDonald <crazymykl@gmail.com>"]
 
 [features]
@@ -12,15 +12,4 @@ unstable = []
 threadpool = "0.1"
 rand = "0.3"
 num_cpus = "0.1"
-
-[dependencies.piston]
-git = "https://github.com/PistonDevelopers/piston"
-
-[dependencies.pistoncore-glutin_window]
-git = "https://github.com/pistondevelopers/glutin_window"
-
-[dependencies.piston2d-opengl_graphics]
-git = "https://github.com/pistondevelopers/opengl_graphics"
-
-[dependencies.piston2d-graphics]
-git = "https://github.com/pistondevelopers/graphics"
+piston_window = "0.11.0"
