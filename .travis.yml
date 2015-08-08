@@ -2,10 +2,14 @@ language: rust
 rust:
   - stable
   - nightly
-before_install:
-  - sudo apt-get update -qq
-install:
-  - sudo apt-get install libXxf86vm-dev
+
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - libXxf86vm-dev
+
 script:
   - cargo build --verbose
   - cargo test --verbose
