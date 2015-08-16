@@ -31,7 +31,8 @@ fn main() {
     let window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
         .opengl(opengl)
-        .into();
+        .build()
+        .unwrap();
     let mut running = true;
     let mut cursor = [0, 0];
 
