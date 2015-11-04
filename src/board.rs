@@ -121,6 +121,7 @@ impl Board {
         self.next_board(board)
     }
 
+    #[allow(dead_code)]
     pub fn next_generation(&self) -> Board {
         let new_brd = (0..self.len()).map(|cell| self.successor_cell(cell)).collect();
 
@@ -175,6 +176,7 @@ impl Board {
         Board::new(self.rows, self.cols)
     }
 
+    #[allow(dead_code)]
     fn from_str(string: &str) -> Option<Board> {
         let rows: Vec<&str> = string.split_terminator('\n').collect();
         let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
@@ -216,7 +218,7 @@ impl fmt::Display for Board {
             row_to_str(row)
         ).collect();
 
-        write!(f, "{}", rows.connect("\n"))
+        write!(f, "{}", rows.join("\n"))
     }
 }
 
