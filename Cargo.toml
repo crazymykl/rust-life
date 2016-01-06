@@ -3,6 +3,9 @@
 name = "rust-life"
 version = "0.0.3"
 authors = ["Mike MacDonald <crazymykl@gmail.com>"]
+description = "An implementation of Conway's Game of Life."
+license = "MIT"
+repository = "https://github.com/crazymykl/rust-life"
 
 [features]
 unstable = []
