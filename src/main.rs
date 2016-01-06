@@ -5,6 +5,7 @@ extern crate rand;
 extern crate num_cpus;
 
 extern crate piston_window;
+extern crate image as im;
 
 use piston_window::*;
 
@@ -35,6 +36,12 @@ fn main() {
         .unwrap();
     let mut running = true;
     let mut cursor = [0, 0];
+    let mut canvas = im::ImageBuffer::new(rows as u32, cols as u32);
+    let mut texture = Texture::from_image(
+        &mut *window.factory.borrow_mut(),
+        &canvas,
+        &TextureSettings::new()
+    ).unwrap();
 
     for e in window {
         e.mouse_cursor(|x, y| {
@@ -58,16 +65,14 @@ fn main() {
         }
 
         if let Some(_) = e.render_args() {
+            for (x, y, val) in brd.cells() {
+                let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
+                canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
+            }
+            texture.update(&mut*e.factory.borrow_mut(), &canvas).unwrap();
             e.draw_2d(|c, g| {
                 clear([0.0; 4], g);
-                for (x, y, val) in brd.cells() {
-                    if !val { continue; }
-                    rectangle(
-                        [1.0; 4],
-                        [y as f64 * SCALE, x as f64 * SCALE, SCALE, SCALE],
-                        c.transform, g
-                    );
-                }
+                image(&texture, c.transform.scale(SCALE, SCALE), g);
             });
         }
 
