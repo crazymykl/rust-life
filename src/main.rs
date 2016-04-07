@@ -28,10 +28,9 @@ fn main() {
     let mut brd = board::Board::new(rows, cols).random();
     let ref mut worker_pool = board::WorkerPool::new_with_default_size();
 
-    let opengl = OpenGL::V3_2;
     let window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
-        .opengl(opengl)
+        .opengl(OpenGL::V3_2)
         .build()
         .unwrap();
     let mut running = true;
@@ -69,7 +68,7 @@ fn main() {
                 let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
                 canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
             }
-            texture.update(&mut*e.factory.borrow_mut(), &canvas).unwrap();
+            texture.update(&mut e.encoder.borrow_mut(), &canvas).unwrap();
             e.draw_2d(|c, g| {
                 clear([0.0; 4], g);
                 image(&texture, c.transform.scale(SCALE, SCALE), g);

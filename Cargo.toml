@@ -12,8 +12,8 @@ unstable = []
 
 [dependencies]
 
-threadpool = "0.1"
+threadpool = "1.0"
 rand = "0.3"
-num_cpus = "0.1"
-piston_window = "0.33.0"
-image = "0.6.0"
+num_cpus = "0.2.11"
+piston_window = "0.41.0"
+image = "0.8.0"
