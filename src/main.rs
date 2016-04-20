@@ -28,7 +28,7 @@ fn main() {
     let mut brd = board::Board::new(rows, cols).random();
     let ref mut worker_pool = board::WorkerPool::new_with_default_size();
 
-    let window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
+    let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
         .opengl(OpenGL::V3_2)
         .build()
@@ -37,12 +37,12 @@ fn main() {
     let mut cursor = [0, 0];
     let mut canvas = im::ImageBuffer::new(rows as u32, cols as u32);
     let mut texture = Texture::from_image(
-        &mut *window.factory.borrow_mut(),
+        &mut window.factory,
         &canvas,
         &TextureSettings::new()
     ).unwrap();
 
-    for e in window {
+    while let Some(e) = window.next() {
         e.mouse_cursor(|x, y| {
             cursor = [x as u32, y as u32];
         });
@@ -68,8 +68,8 @@ fn main() {
                 let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
                 canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
             }
-            texture.update(&mut e.encoder.borrow_mut(), &canvas).unwrap();
-            e.draw_2d(|c, g| {
+            texture.update(&mut window.encoder, &canvas).unwrap();
+            window.draw_2d(&e, |c, g| {
                 clear([0.0; 4], g);
                 image(&texture, c.transform.scale(SCALE, SCALE), g);
             });

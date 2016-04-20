@@ -15,5 +15,5 @@ unstable = []
 threadpool = "1.0"
 rand = "0.3"
 num_cpus = "0.2.11"
-piston_window = "0.42.0"
+piston_window = "0.43.0"
 image = "0.9.0"
