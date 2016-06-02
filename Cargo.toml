@@ -1,7 +1,7 @@
 [package]
 
 name = "rust-life"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Mike MacDonald <crazymykl@gmail.com>"]
 description = "An implementation of Conway's Game of Life."
 license = "MIT"
@@ -15,5 +15,5 @@ unstable = []
 threadpool = "1.0"
 rand = "0.3"
 num_cpus = "0.2.11"
-piston_window = "0.43.0"
-image = "0.9.0"
+piston_window = "0.47.2"
+image = "0.10.0"
