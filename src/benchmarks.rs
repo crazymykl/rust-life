@@ -12,7 +12,7 @@ fn bench_random(b: &mut Bencher) {
 #[bench]
 fn bench_ten_generations(b: &mut Bencher) {
     let mut brd = Board::new(200,200).random();
-    b.iter(|| for _ in (0..10) { brd = brd.next_generation(); });
+    b.iter(|| for _ in 0..10 { brd = brd.next_generation(); });
 }
 
 #[bench]
@@ -20,5 +20,5 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
     let mut brd = Board::new(200,200).random();
     let ref mut workers = WorkerPool::new_with_default_size();
 
-    b.iter(|| for _ in (0..10) { brd = brd.parallel_next_generation(workers); });
+    b.iter(|| for _ in 0..10 { brd = brd.parallel_next_generation(workers); });
 }

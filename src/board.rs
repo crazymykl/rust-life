@@ -264,3 +264,24 @@ fn test_parallel_next_generation() {
 
     assert_eq!(testing_board(1).parallel_next_generation(workers), testing_board(2));
 }
+
+#[test]
+fn test_clear() {
+    let brd = testing_board(0);
+
+    assert!(brd.clear().cells().iter().all(|&(_, _, x)| !x));
+}
+
+#[test]
+fn test_random() {
+    let (brd, brd2) = (testing_board(0).random(), testing_board(0).random());
+
+    assert!(brd != brd2);
+}
+
+#[test]
+fn test_toggle() {
+    let brd = testing_board(0);
+
+    assert_eq!(brd.toggle(0, 0).toggle(0, 0), brd);
+}
