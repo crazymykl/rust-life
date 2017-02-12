@@ -1,8 +1,7 @@
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 
-extern crate threadpool;
 extern crate rand;
-extern crate num_cpus;
+extern crate rayon;
 
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;

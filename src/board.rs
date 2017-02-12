@@ -1,10 +1,8 @@
 use std::fmt;
 use rand::{thread_rng, Rng};
-use std::sync::{Arc, RwLock, Barrier};
 use std::iter::repeat;
 use std::num::Wrapping;
-use threadpool::ThreadPool;
-use num_cpus;
+use rayon::prelude::*;
 
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
@@ -16,71 +14,6 @@ pub struct Board {
     born: Vec<usize>,
     rows: usize,
     cols: usize
-}
-
-pub struct WorkerPool {
-    pool: ThreadPool,
-    size: usize
-}
-
-impl WorkerPool {
-    pub fn new(size: usize) -> WorkerPool {
-        WorkerPool {
-            pool: ThreadPool::new(size),
-            size: size
-        }
-    }
-
-    pub fn new_with_default_size() -> WorkerPool {
-        WorkerPool::new(num_cpus::get())
-    }
-}
-
-struct BoardAdvancer {
-    board: Board,
-    next_cells: RwLock<Vec<Vec<bool>>>
-}
-
-impl BoardAdvancer {
-    fn new(board: &Board, num_tasks: usize) -> BoardAdvancer {
-        BoardAdvancer {
-            board: board.clone(),
-            next_cells: RwLock::new(repeat(vec![]).take(num_tasks).collect()),
-        }
-    }
-
-    fn advance(board: &Board, workers: &mut WorkerPool) -> Vec<bool> {
-        let shared_board = Arc::new(BoardAdvancer::new(board, workers.size));
-        let length = board.len();
-        let all_tasks: Vec<usize> = (0..length).collect();
-        let tasks: Vec<&[usize]> = all_tasks
-            .chunks((length + workers.size - 1) / workers.size)
-            .collect();
-        let barrier = Arc::new(Barrier::new(tasks.clone().len() + 1));
-
-        for (i, task) in tasks.iter().enumerate() {
-            let task_board = shared_board.clone();
-            let task = task.to_vec();
-            let done = barrier.clone();
-
-            workers.pool.execute(move || {
-                let task_values = task.iter().map(|&idx|
-                    task_board.board.successor_cell(idx)
-                ).collect::<Vec<bool>>();
-                if let Ok(mut task_results) = task_board.next_cells.write() {
-                    task_results[i] = task_values;
-                }
-                done.wait();
-            });
-
-        };
-
-        barrier.wait();
-        let next_board = shared_board.next_cells.read().unwrap();
-        next_board.concat()
-    }
-
-
 }
 
 impl Board {
@@ -95,10 +28,10 @@ impl Board {
         let new_board = repeat(false).take(rows * cols).collect();
 
         Board { board  : new_board,
-                        born   : born,
-                        survive: survive,
-                        rows   : rows,
-                        cols   : cols }
+                born   : born,
+                survive: survive,
+                rows   : rows,
+                cols   : cols }
     }
 
     fn len(&self) -> usize {
@@ -109,10 +42,10 @@ impl Board {
         assert!(new_board.len() == self.len());
 
         Board { board  : new_board,
-                        born   : self.born.clone(),
-                        survive: self.survive.clone(),
-                        rows   : self.rows,
-                        cols   : self.cols }
+                born   : self.born.clone(),
+                survive: self.survive.clone(),
+                rows   : self.rows,
+                cols   : self.cols }
     }
 
     pub fn random(&self) -> Board {
@@ -128,10 +61,14 @@ impl Board {
         self.next_board(new_brd)
     }
 
-    pub fn parallel_next_generation(&self, workers: &mut WorkerPool) -> Board {
-        let new_brd = BoardAdvancer::advance(self, workers);
+    pub fn parallel_next_generation(&self) -> Board {
+        let new_board = (0..self.len())
+            .collect::<Vec<usize>>()
+            .par_iter()
+            .map(|&x| self.successor_cell(x))
+            .collect();
 
-        self.next_board(new_brd)
+        self.next_board(new_board)
     }
 
     fn cell_live(&self, x: usize, y: usize) -> bool {
@@ -260,9 +197,7 @@ fn test_next_generation() {
 
 #[test]
 fn test_parallel_next_generation() {
-    let ref mut workers = WorkerPool::new_with_default_size();
-
-    assert_eq!(testing_board(1).parallel_next_generation(workers), testing_board(2));
+    assert_eq!(testing_board(1).parallel_next_generation(), testing_board(2));
 }
 
 #[test]

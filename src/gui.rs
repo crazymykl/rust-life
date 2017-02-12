@@ -15,7 +15,6 @@ fn scale_dimension(x: u32) -> usize {
 pub fn main() {
     let (rows, cols) = (scale_dimension(X_SZ), scale_dimension(Y_SZ));
     let mut brd = board::Board::new(rows, cols).random();
-    let ref mut worker_pool = board::WorkerPool::new_with_default_size();
 
     let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
@@ -47,7 +46,7 @@ pub fn main() {
                 | Button::Keyboard(Key::Space)   => running = !running,
                 Button::Keyboard(Key::C)         => brd = brd.clear(),
                 Button::Keyboard(Key::R)         => brd = brd.random(),
-                Button::Keyboard(Key::S)         => brd = brd.parallel_next_generation(worker_pool),
+                Button::Keyboard(Key::S)         => brd = brd.parallel_next_generation(),
                 _                                => {}
             };
         }
@@ -65,7 +64,7 @@ pub fn main() {
         }
 
         if let Some(_) = e.update_args() {
-            if running { brd = brd.parallel_next_generation(worker_pool); }
+            if running { brd = brd.parallel_next_generation(); }
         }
     }
 }
