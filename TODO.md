@@ -1,0 +1,1 @@
+- [ ] Quit with <kbd>q</kbd>.
