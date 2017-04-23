@@ -2,6 +2,7 @@ use std::fmt;
 use rand::{thread_rng, Rng};
 use std::iter::repeat;
 use std::num::Wrapping;
+use std::sync::Arc;
 use rayon::prelude::*;
 
 const LIVE_CELL: char = '@';
@@ -10,8 +11,8 @@ const DEAD_CELL: char = '.';
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Board {
     board: Vec<bool>,
-    survive: Vec<usize>,
-    born: Vec<usize>,
+    survive: Arc<Vec<usize>>,
+    born: Arc<Vec<usize>>,
     rows: usize,
     cols: usize
 }
@@ -28,8 +29,8 @@ impl Board {
         let new_board = repeat(false).take(rows * cols).collect();
 
         Board { board  : new_board,
-                born   : born,
-                survive: survive,
+                born   : Arc::new(born),
+                survive: Arc::new(survive),
                 rows   : rows,
                 cols   : cols }
     }
@@ -49,9 +50,9 @@ impl Board {
     }
 
     pub fn random(&self) -> Board {
-        let board = thread_rng().gen_iter::<bool>().take(self.len()).collect();
+        let brd = thread_rng().gen_iter::<bool>().take(self.len()).collect();
 
-        self.next_board(board)
+        self.next_board(brd)
     }
 
     #[allow(dead_code)]
@@ -62,13 +63,13 @@ impl Board {
     }
 
     pub fn parallel_next_generation(&self) -> Board {
-        let new_board = (0..self.len())
+        let new_brd = (0..self.len())
             .collect::<Vec<usize>>()
             .par_iter()
             .map(|&x| self.successor_cell(x))
             .collect();
 
-        self.next_board(new_board)
+        self.next_board(new_brd)
     }
 
     fn cell_live(&self, x: usize, y: usize) -> bool {
