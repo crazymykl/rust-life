@@ -51,7 +51,7 @@ pub fn main() {
             };
         }
 
-        if let Some(_) = e.render_args() {
+        if e.render_args().is_some() {
             for (x, y, val) in brd.cells() {
                 let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
                 canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
@@ -63,8 +63,8 @@ pub fn main() {
             });
         }
 
-        if let Some(_) = e.update_args() {
-            if running { brd = brd.parallel_next_generation(); }
+        if e.update_args().is_some() && running {
+            brd = brd.parallel_next_generation();
         }
     }
 }

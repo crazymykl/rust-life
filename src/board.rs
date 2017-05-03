@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, str};
 use rand::{thread_rng, Rng};
 use std::iter::repeat;
 use std::num::Wrapping;
@@ -40,7 +40,7 @@ impl Board {
     }
 
     fn next_board(&self, new_board: Vec<bool>) -> Board {
-        assert!(new_board.len() == self.len());
+        assert_eq!(new_board.len(), self.len());
 
         Board { board  : new_board,
                 born   : self.born.clone(),
@@ -80,7 +80,7 @@ impl Board {
         let Wrapping(y_1) = Wrapping(y) - Wrapping(1);
         let neighbors = [
             self.cell_live(x_1, y_1), self.cell_live(x, y_1), self.cell_live(x+1, y_1),
-            self.cell_live(x_1, y+0),                         self.cell_live(x+1, y+0),
+            self.cell_live(x_1, y  ),                         self.cell_live(x+1, y  ),
             self.cell_live(x_1, y+1), self.cell_live(x, y+1), self.cell_live(x+1, y+1),
         ];
         neighbors.iter().filter(|&x| *x).count()
@@ -113,27 +113,6 @@ impl Board {
         Board::new(self.rows, self.cols)
     }
 
-    #[allow(dead_code)]
-    fn from_str(string: &str) -> Option<Board> {
-        let rows: Vec<&str> = string.split_terminator('\n').collect();
-        let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
-
-        if rows.iter().any(|x| x.len() != row_cnt) { return None; };
-
-        let chars: String = rows.concat();
-
-        let brd: Option<Vec<bool>> = chars.chars().map(|c| match c {
-                LIVE_CELL => Some(true),
-                DEAD_CELL => Some(false),
-                _         => None
-            }).collect();
-
-        match brd {
-            Some(board) => Some(Board::new(row_cnt, col_cnt).next_board(board)),
-            None        => None
-        }
-    }
-
     pub fn cells(&self) -> Vec<(usize, usize, bool)> {
         self.board.iter()
             .enumerate()
@@ -156,6 +135,32 @@ impl fmt::Display for Board {
         ).collect();
 
         write!(f, "{}", rows.join("\n"))
+    }
+}
+
+pub struct ParseBoardErr();
+
+impl str::FromStr for Board {
+    type Err = ParseBoardErr;
+
+    fn from_str(string: &str) -> Result<Board, ParseBoardErr> {
+        let rows: Vec<&str> = string.split_terminator('\n').collect();
+        let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
+
+        if rows.iter().any(|x| x.len() != row_cnt) { return Err(ParseBoardErr()) };
+
+        let chars: String = rows.concat();
+
+        let brd: Option<Vec<bool>> = chars.chars().map(|c| match c {
+                LIVE_CELL => Some(true),
+                DEAD_CELL => Some(false),
+                _         => None
+            }).collect();
+
+        match brd {
+            Some(board) => Ok(Board::new(row_cnt, col_cnt).next_board(board)),
+            None        => Err(ParseBoardErr())
+        }
     }
 }
 
