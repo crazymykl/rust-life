@@ -1,4 +1,5 @@
-use std::{fmt, str};
+use std::fmt;
+use std::str::FromStr;
 use rand::{thread_rng, Rng};
 use std::iter::repeat;
 use std::num::Wrapping;
@@ -140,7 +141,7 @@ impl fmt::Display for Board {
 
 pub struct ParseBoardErr();
 
-impl str::FromStr for Board {
+impl FromStr for Board {
     type Err = ParseBoardErr;
 
     fn from_str(string: &str) -> Result<Board, ParseBoardErr> {
@@ -173,7 +174,7 @@ const TEST_BOARDS: [&'static str; 3] = [
 
 #[cfg(test)]
 fn testing_board(n: usize) -> Board {
-    Board::from_str(TEST_BOARDS[n]).unwrap()
+    Board::from_str(TEST_BOARDS[n]).ok().unwrap()
 }
 
 #[test]
