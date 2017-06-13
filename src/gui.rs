@@ -4,7 +4,7 @@ extern crate image as im;
 use self::piston_window::*;
 use board;
 
-const SCALE: f64 = 2.0;
+const SCALE: f64 = 1.0;
 const X_SZ: u32 = 1280;
 const Y_SZ: u32 = 800;
 
