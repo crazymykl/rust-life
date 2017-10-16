@@ -13,6 +13,6 @@ unstable = []
 [dependencies]
 
 rand = "0.3"
-piston_window = "0.72.0"
-image = "0.16.0"
+piston_window = "0.73.0"
+image = "0.17.0"
 rayon = "0.8.2"
