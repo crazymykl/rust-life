@@ -9,7 +9,7 @@ const X_SZ: u32 = 1280;
 const Y_SZ: u32 = 800;
 
 fn scale_dimension(x: u32) -> usize {
-    (x as f64 / SCALE).floor() as usize
+    (f64::from(x) / SCALE).floor() as usize
 }
 
 pub fn main() {

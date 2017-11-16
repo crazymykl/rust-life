@@ -2,7 +2,6 @@ use std::fmt;
 use std::str::FromStr;
 use rand::{thread_rng, Rng};
 use std::iter::repeat;
-use std::num::Wrapping;
 use std::sync::Arc;
 use rayon::prelude::*;
 
@@ -44,8 +43,8 @@ impl Board {
         assert_eq!(new_board.len(), self.len());
 
         Board { board  : new_board,
-                born   : self.born.clone(),
-                survive: self.survive.clone(),
+                born   : Arc::clone(&self.born),
+                survive: Arc::clone(&self.survive),
                 rows   : self.rows,
                 cols   : self.cols }
     }
@@ -77,8 +76,7 @@ impl Board {
     }
 
     fn living_neighbors(&self, x: usize, y: usize) -> usize {
-        let Wrapping(x_1) = Wrapping(x) - Wrapping(1);
-        let Wrapping(y_1) = Wrapping(y) - Wrapping(1);
+        let (x_1, y_1) = (x.wrapping_sub(1), y.wrapping_sub(1));
         let neighbors = [
             self.cell_live(x_1, y_1), self.cell_live(x, y_1), self.cell_live(x+1, y_1),
             self.cell_live(x_1, y  ),                         self.cell_live(x+1, y  ),
