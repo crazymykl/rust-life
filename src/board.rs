@@ -1,6 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, distributions::Standard};
 use std::iter::repeat;
 use std::sync::Arc;
 use rayon::prelude::*;
@@ -50,7 +50,7 @@ impl Board {
     }
 
     pub fn random(&self) -> Board {
-        let brd = thread_rng().gen_iter().take(self.len()).collect();
+        let brd = thread_rng().sample_iter(&Standard).take(self.len()).collect();
 
         self.next_board(brd)
     }
