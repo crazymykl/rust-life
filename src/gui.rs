@@ -4,26 +4,29 @@ extern crate image as im;
 use self::piston_window::*;
 use board;
 
-const SCALE: f64 = 2.0;
-const X_SZ: u32 = 1280;
-const Y_SZ: u32 = 800;
+// woh
+// const SCALE: f64 = 1.0;
+// const X_SZ: u32 = 1920;
+// const Y_SZ: u32 = 1080;
 
-fn scale_dimension(x: u32) -> usize {
-    (f64::from(x) / SCALE).floor() as usize
-}
+const SCALE: u32 = 10;
+const X_SZ: u32 = 800;
+const Y_SZ: u32 = 600;
 
 pub fn main() {
-    let (rows, cols) = (scale_dimension(X_SZ), scale_dimension(Y_SZ));
-    let mut brd = board::Board::new(rows, cols).random();
+    let (rows, cols) = (X_SZ / SCALE, Y_SZ / SCALE);
+    let mut brd = board::Board::new(rows as usize, cols as usize).random();
+    // let ref mut worker_pool = board::WorkerPool::new_with_default_size();
 
     let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
         .opengl(OpenGL::V3_2)
+        .fullscreen(true)
         .build()
         .unwrap();
     let mut running = true;
     let mut cursor = [0, 0];
-    let mut canvas = im::ImageBuffer::new(rows as u32, cols as u32);
+    let mut canvas = im::ImageBuffer::new(X_SZ as u32, X_SZ as u32);
     let mut texture = Texture::from_image(
         &mut window.factory,
         &canvas,
@@ -38,9 +41,9 @@ pub fn main() {
         if let Some(btn) = e.press_args() {
             match btn {
                 Button::Mouse(MouseButton::Left) => {
-                    let (x, y) = (scale_dimension(cursor[0]) - 1
-                                , scale_dimension(cursor[1]) - 1);
-                    brd = brd.toggle(x, y);
+                    // let (x, y) = (scale_dimension(cursor[0]) - 1,
+                    //               scale_dimension(cursor[1]) - 1);
+                    // brd = brd.toggle(x, y);
                 },
                 Button::Mouse(MouseButton::Right)
                 | Button::Keyboard(Key::Space)   => running = !running,
@@ -54,12 +57,16 @@ pub fn main() {
         if e.render_args().is_some() {
             for (x, y, val) in brd.cells() {
                 let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
-                canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
+                for i in (0..SCALE) {
+                    let sx = x as u32 * SCALE + i;
+                    let sy = y as u32 * SCALE + i;
+                    canvas.put_pixel(sy, sx, im::Rgba(color));
+                }
             }
             texture.update(&mut window.encoder, &canvas).unwrap();
             window.draw_2d(&e, |c, g| {
                 clear([0.0; 4], g);
-                image(&texture, c.transform.scale(SCALE, SCALE), g);
+                image(&texture, c.transform, g);
             });
         }
 
