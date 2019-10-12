@@ -33,7 +33,7 @@ pub fn main() {
     let mut brd = board::Board::new(rows as usize, cols as usize).random();
     let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
-        .opengl(OpenGL::V3_2)
+        .graphics_api(OpenGL::V3_2)
         .fullscreen(true)
         .build()
         .unwrap();
@@ -46,16 +46,17 @@ pub fn main() {
         bench_mode: false,
     });
     let mut canvas = im::ImageBuffer::new(X_SZ as u32, X_SZ as u32);
+    let mut ctx = window.create_texture_context();
     let mut texture = Texture::from_image(
-        &mut window.factory,
+        &mut ctx,
         &canvas,
-        &TextureSettings::new()
+        &TextureSettings::new().filter(Filter::Nearest),
     ).unwrap();
 
     let mut running = true;
     let mut cursor = [0, 0];
     while let Some(e) = window.next() {
-        e.mouse_cursor(|x, y| {
+        e.mouse_cursor(|[x, y]| {
             cursor = [x as u32, y as u32];
         });
 
@@ -92,8 +93,11 @@ pub fn main() {
                 }
             }
 
-            texture.update(&mut window.encoder, &canvas).unwrap();
-            window.draw_2d(&e, |c, g| {
+            texture.update(&mut ctx, &canvas).unwrap();
+            window.draw_2d(&e, |c, g, d| {
+                // Update texture before rendering.
+                ctx.encoder.flush(d);
+
                 clear([0.0; 4], g);
                 image(&texture, c.transform, g);
             });
