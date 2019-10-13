@@ -4,43 +4,68 @@ extern crate image as im;
 use self::piston_window::*;
 use board;
 
-const SCALE: f64 = 2.0;
-const X_SZ: u32 = 1280;
-const Y_SZ: u32 = 800;
+// // Like my AVR build.
+// const UPS: u32 = 1;
+// const SCALE: u32 = 10;
+// const X_SZ: u32 = 80;
+// const Y_SZ: u32 = 80;
 
-fn scale_dimension(x: u32) -> usize {
-    (f64::from(x) / SCALE).floor() as usize
-}
+// // Like my ARM build.
+// const UPS: u32 = 15;
+// const SCALE: u32 = 5;
+// const X_SZ: u32 = 64*5;
+// const Y_SZ: u32 = 64*5;
+
+// // But now we have real hardware.
+// const UPS: u32 = 10;
+// const SCALE: u32 = 4;
+// const X_SZ: u32 = 1920;
+// const Y_SZ: u32 = 1080;
+
+// This is a pretty big bang.
+const UPS: u32 = 120;
+const SCALE: u32 = 1;
+const X_SZ: u32 = 1920;
+const Y_SZ: u32 = 1080;
 
 pub fn main() {
-    let (rows, cols) = (scale_dimension(X_SZ), scale_dimension(Y_SZ));
-    let mut brd = board::Board::new(rows, cols).random();
-
+    let (rows, cols) = (X_SZ / SCALE, Y_SZ / SCALE);
+    let mut brd = board::Board::new(rows as usize, cols as usize).random();
     let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
         .exit_on_esc(true)
-        .opengl(OpenGL::V3_2)
+        .graphics_api(OpenGL::V3_2)
+        .fullscreen(true)
         .build()
         .unwrap();
-    let mut running = true;
-    let mut cursor = [0, 0];
-    let mut canvas = im::ImageBuffer::new(rows as u32, cols as u32);
+    window.events = Events::new(EventSettings {
+        max_fps: 60,
+        ups: UPS as u64,
+        ups_reset: 2,
+        swap_buffers: true,
+        lazy: false,
+        bench_mode: false,
+    });
+    let mut canvas = im::ImageBuffer::new(X_SZ as u32, X_SZ as u32);
+    let mut ctx = window.create_texture_context();
     let mut texture = Texture::from_image(
-        &mut window.factory,
+        &mut ctx,
         &canvas,
-        &TextureSettings::new()
+        &TextureSettings::new(),
     ).unwrap();
 
+    let mut running = true;
+    let mut cursor = [0, 0];
     while let Some(e) = window.next() {
-        e.mouse_cursor(|x, y| {
+        e.mouse_cursor(|[x, y]| {
             cursor = [x as u32, y as u32];
         });
 
         if let Some(btn) = e.press_args() {
             match btn {
                 Button::Mouse(MouseButton::Left) => {
-                    let (x, y) = (scale_dimension(cursor[0]) - 1
-                                , scale_dimension(cursor[1]) - 1);
-                    brd = brd.toggle(x, y);
+                    let (x, y) = (cursor[0] / SCALE,
+                                  cursor[1] / SCALE);
+                    brd = brd.toggle(x as usize, y as usize);
                 },
                 Button::Mouse(MouseButton::Right)
                 | Button::Keyboard(Key::Space)   => running = !running,
@@ -51,20 +76,37 @@ pub fn main() {
             };
         }
 
-        if e.render_args().is_some() {
+        if let Some(_) = e.render_args() {
             for (x, y, val) in brd.cells() {
-                let color = if val { [255, 255, 255, 255] } else { [0, 0, 0, 255] };
-                canvas.put_pixel(y as u32, x as u32, im::Rgba(color));
+                let color = if val {
+                    [255, 255, 255, 255]
+                } else {
+                    [0, 0, 0, 255]
+                };
+
+                for i in 0..SCALE {
+                    for j in 0..SCALE {
+                        let sx = x as u32 * SCALE + i;
+                        let sy = y as u32 * SCALE + j;
+                        canvas.put_pixel(sy, sx, im::Rgba(color));
+                    }
+                }
             }
-            texture.update(&mut window.encoder, &canvas).unwrap();
-            window.draw_2d(&e, |c, g| {
+
+            texture.update(&mut ctx, &canvas).unwrap();
+            window.draw_2d(&e, |c, g, d| {
+                // Update texture before rendering.
+                ctx.encoder.flush(d);
+
                 clear([0.0; 4], g);
-                image(&texture, c.transform.scale(SCALE, SCALE), g);
+                image(&texture, c.transform, g);
             });
         }
 
-        if e.update_args().is_some() && running {
-            brd = brd.parallel_next_generation();
+        if let Some(_) = e.update_args() {
+            if running {
+                brd = brd.parallel_next_generation();
+            }
         }
     }
 }
