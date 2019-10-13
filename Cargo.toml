@@ -16,3 +16,6 @@ rand = "0.6.5"
 piston_window = "*"
 image = "*"
 rayon = "1.0.3"
+
+[patch.crates-io]
+pistoncore-glutin_window = { git = "https://github.com/nixpulvis/glutin_window", branch = "size-fix" }

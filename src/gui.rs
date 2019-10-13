@@ -50,7 +50,7 @@ pub fn main() {
     let mut texture = Texture::from_image(
         &mut ctx,
         &canvas,
-        &TextureSettings::new().filter(Filter::Nearest),
+        &TextureSettings::new(),
     ).unwrap();
 
     let mut running = true;
