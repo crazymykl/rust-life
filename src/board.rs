@@ -31,8 +31,8 @@ impl Board {
         Board { board  : new_board,
                 born   : Arc::new(born),
                 survive: Arc::new(survive),
-                rows   : rows,
-                cols   : cols }
+                rows,
+                cols }
     }
 
     fn len(&self) -> usize {
@@ -129,9 +129,7 @@ impl fmt::Display for Board {
             ).collect()
         }
 
-        let rows: Vec<String> = self.board.chunks(self.cols).map(|row|
-            row_to_str(row)
-        ).collect();
+        let rows: Vec<String> = self.board.chunks(self.cols).map(row_to_str).collect();
 
         write!(f, "{}", rows.join("\n"))
     }
