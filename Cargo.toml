@@ -6,6 +6,7 @@ authors = ["Mike MacDonald <crazymykl@gmail.com>"]
 description = "An implementation of Conway's Game of Life."
 license = "MIT"
 repository = "https://github.com/crazymykl/rust-life"
+edition = '2021'
 
 [features]
 unstable = []
