@@ -1,7 +1,7 @@
 extern crate test;
 
 use self::test::Bencher;
-use board::Board;
+use crate::board::Board;
 
 #[bench]
 fn bench_random(b: &mut Bencher) {
