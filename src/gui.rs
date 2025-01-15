@@ -1,8 +1,8 @@
 extern crate image;
 extern crate piston_window;
 
-use self::piston_window::*;
 use self::image::{ImageBuffer, Rgba};
+use self::piston_window::*;
 use crate::board;
 
 const SCALE: f64 = 2.0;
@@ -60,11 +60,7 @@ pub fn main() {
 
         if e.render_args().is_some() {
             for (x, y, val) in brd.cells() {
-                let color = if val {
-                    LIVE_COLOR
-                } else {
-                    DEAD_COLOR
-                };
+                let color = if val { LIVE_COLOR } else { DEAD_COLOR };
                 canvas.put_pixel(y as u32, x as u32, Rgba(color));
             }
             texture.update(&mut texture_context, &canvas).unwrap();

@@ -1,9 +1,9 @@
-use std::fmt;
-use std::str::FromStr;
-use rand::{thread_rng, Rng, distributions::Standard};
-use std::iter::repeat;
-use std::sync::Arc;
+use rand::{distributions::Standard, thread_rng, Rng};
 use rayon::prelude::*;
+use std::fmt;
+use std::iter::repeat;
+use std::str::FromStr;
+use std::sync::Arc;
 
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
@@ -14,7 +14,7 @@ pub struct Board {
     survive: Arc<Vec<usize>>,
     born: Arc<Vec<usize>>,
     rows: usize,
-    cols: usize
+    cols: usize,
 }
 
 impl Board {
@@ -25,14 +25,21 @@ impl Board {
         Board::new_with_custom_rules(rows, cols, born, survive)
     }
 
-    fn new_with_custom_rules(rows: usize, cols: usize, born: Vec<usize>, survive: Vec<usize>) -> Board {
+    fn new_with_custom_rules(
+        rows: usize,
+        cols: usize,
+        born: Vec<usize>,
+        survive: Vec<usize>,
+    ) -> Board {
         let new_board = repeat(false).take(rows * cols).collect();
 
-        Board { board  : new_board,
-                born   : Arc::new(born),
-                survive: Arc::new(survive),
-                rows,
-                cols }
+        Board {
+            board: new_board,
+            born: Arc::new(born),
+            survive: Arc::new(survive),
+            rows,
+            cols,
+        }
     }
 
     fn len(&self) -> usize {
@@ -42,22 +49,29 @@ impl Board {
     fn next_board(&self, new_board: Vec<bool>) -> Board {
         assert_eq!(new_board.len(), self.len());
 
-        Board { board  : new_board,
-                born   : Arc::clone(&self.born),
-                survive: Arc::clone(&self.survive),
-                rows   : self.rows,
-                cols   : self.cols }
+        Board {
+            board: new_board,
+            born: Arc::clone(&self.born),
+            survive: Arc::clone(&self.survive),
+            rows: self.rows,
+            cols: self.cols,
+        }
     }
 
     pub fn random(&self) -> Board {
-        let brd = thread_rng().sample_iter(&Standard).take(self.len()).collect();
+        let brd = thread_rng()
+            .sample_iter(&Standard)
+            .take(self.len())
+            .collect();
 
         self.next_board(brd)
     }
 
     #[allow(dead_code)]
     pub fn next_generation(&self) -> Board {
-        let new_brd = (0..self.len()).map(|cell| self.successor_cell(cell)).collect();
+        let new_brd = (0..self.len())
+            .map(|cell| self.successor_cell(cell))
+            .collect();
 
         self.next_board(new_brd)
     }
@@ -77,6 +91,7 @@ impl Board {
 
     fn living_neighbors(&self, x: usize, y: usize) -> usize {
         let (x_1, y_1) = (x.wrapping_sub(1), y.wrapping_sub(1));
+        #[rustfmt::skip]
         let neighbors = [
             self.cell_live(x_1, y_1), self.cell_live(x, y_1), self.cell_live(x+1, y_1),
             self.cell_live(x_1, y  ),                         self.cell_live(x+1, y  ),
@@ -89,7 +104,7 @@ impl Board {
         self.successor(cell % self.cols, cell / self.cols)
     }
 
-    fn successor(&self, x:usize, y:usize) -> bool {
+    fn successor(&self, x: usize, y: usize) -> bool {
         let neighbors = self.living_neighbors(x, y);
         if self.cell_live(x, y) {
             self.survive.contains(&neighbors)
@@ -98,7 +113,7 @@ impl Board {
         }
     }
 
-    pub fn toggle(&self, x:usize, y:usize) -> Board {
+    pub fn toggle(&self, x: usize, y: usize) -> Board {
         if x < self.rows && y < self.cols {
             let mut board = self.board.clone();
             board[x * self.cols + y] = !board[x * self.cols + y];
@@ -113,7 +128,8 @@ impl Board {
     }
 
     pub fn cells(&self) -> Vec<(usize, usize, bool)> {
-        self.board.iter()
+        self.board
+            .iter()
             .enumerate()
             .map(|(i, v)| (i % self.cols, i / self.cols, *v))
             .collect()
@@ -122,11 +138,10 @@ impl Board {
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         fn row_to_str(row: &[bool]) -> String {
-            row.iter().map(|&cell|
-                if cell {LIVE_CELL} else {DEAD_CELL}
-            ).collect()
+            row.iter()
+                .map(|&cell| if cell { LIVE_CELL } else { DEAD_CELL })
+                .collect()
         }
 
         let rows: Vec<String> = self.board.chunks(self.cols).map(row_to_str).collect();
@@ -144,24 +159,30 @@ impl FromStr for Board {
         let rows: Vec<&str> = string.split_terminator('\n').collect();
         let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
 
-        if rows.iter().any(|x| x.len() != row_cnt) { return Err(ParseBoardErr()) };
+        if rows.iter().any(|x| x.len() != row_cnt) {
+            return Err(ParseBoardErr());
+        };
 
         let chars: String = rows.concat();
 
-        let brd: Option<Vec<bool>> = chars.chars().map(|c| match c {
+        let brd: Option<Vec<bool>> = chars
+            .chars()
+            .map(|c| match c {
                 LIVE_CELL => Some(true),
                 DEAD_CELL => Some(false),
-                _         => None
-            }).collect();
+                _ => None,
+            })
+            .collect();
 
         match brd {
             Some(board) => Ok(Board::new(row_cnt, col_cnt).next_board(board)),
-            None        => Err(ParseBoardErr())
+            None => Err(ParseBoardErr()),
         }
     }
 }
 
 #[cfg(test)]
+#[rustfmt::skip]
 const TEST_BOARDS: [&'static str; 3] = [
     ".@.\n.@@\n.@@",
     "...\n@@@\n...",
@@ -199,7 +220,10 @@ fn test_next_generation() {
 
 #[test]
 fn test_parallel_next_generation() {
-    assert_eq!(testing_board(1).parallel_next_generation(), testing_board(2));
+    assert_eq!(
+        testing_board(1).parallel_next_generation(),
+        testing_board(2)
+    );
 }
 
 #[test]
