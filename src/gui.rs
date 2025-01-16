@@ -1,8 +1,7 @@
-extern crate image;
-extern crate piston_window;
 
-use self::image::{ImageBuffer, Rgba};
-use self::piston_window::*;
+
+use ::image::{ImageBuffer, Rgba};
+use piston_window::*;
 use crate::board;
 
 const SCALE: f64 = 2.0;
