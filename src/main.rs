@@ -10,9 +10,6 @@ use std::time::Duration;
 use board::Board;
 use clap::Parser;
 
-const MIN_SCALE: f64 = 0.1;
-const MAX_SCALE: f64 = 10.0;
-
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
@@ -35,7 +32,11 @@ struct Args {
     no_gui: bool,
 }
 
+#[cfg(feature = "gui")]
 fn valid_scale(s: &str) -> Result<f64, String> {
+    const MIN_SCALE: f64 = 0.1;
+    const MAX_SCALE: f64 = 10.0;
+
     match s.parse().map_err(|s| format!("{s}"))? {
         n @ 0.1..=10.0 => Ok(n),
         _ => Err(format!(
@@ -44,10 +45,9 @@ fn valid_scale(s: &str) -> Result<f64, String> {
     }
 }
 
-#[cfg(all(not(test), feature = "gui"))]
+#[cfg(feature = "gui")]
 mod gui;
 
-#[cfg(not(test))]
 fn main() {
     let args = Args::parse();
 
