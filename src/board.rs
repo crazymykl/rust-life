@@ -1,4 +1,5 @@
 use rand::{distributions::Standard, thread_rng, Rng};
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::fmt;
 use std::iter::repeat;
@@ -68,7 +69,7 @@ impl Board {
     }
 
     #[allow(dead_code)]
-    pub fn next_generation(&self) -> Board {
+    pub fn serial_next_generation(&self) -> Board {
         let new_brd = (0..self.len())
             .map(|cell| self.successor_cell(cell))
             .collect();
@@ -76,6 +77,15 @@ impl Board {
         self.next_board(new_brd)
     }
 
+    pub fn next_generation(&self) -> Board {
+        if cfg!(feature = "rayon") {
+            self.parallel_next_generation()
+        } else {
+            self.serial_next_generation()
+        }
+    }
+
+    #[cfg(feature = "rayon")]
     pub fn parallel_next_generation(&self) -> Board {
         let new_brd = (0..self.len())
             .into_par_iter()
@@ -83,6 +93,11 @@ impl Board {
             .collect();
 
         self.next_board(new_brd)
+    }
+
+    #[cfg(not(feature = "rayon"))]
+    pub fn parallel_next_generation(&self) -> Board {
+        unimplemented!("Need 'rayon' feature for parallelism")
     }
 
     fn cell_live(&self, x: usize, y: usize) -> bool {
@@ -218,6 +233,12 @@ fn test_next_generation() {
     assert_eq!(testing_board(1).next_generation(), testing_board(2));
 }
 
+#[test]
+fn test_serial_next_generation() {
+    assert_eq!(testing_board(1).serial_next_generation(), testing_board(2));
+}
+
+#[cfg(feature = "rayon")]
 #[test]
 fn test_parallel_next_generation() {
     assert_eq!(

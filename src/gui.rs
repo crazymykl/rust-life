@@ -1,31 +1,27 @@
-
-
+use crate::board;
+use crate::Args;
 use ::image::{ImageBuffer, Rgba};
 use piston_window::*;
-use crate::board;
 
-const SCALE: f64 = 2.0;
-const X_SZ: u32 = 1280;
-const Y_SZ: u32 = 800;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
-fn scale_dimension(x: u32) -> usize {
-    (f64::from(x) / SCALE).floor() as usize
-}
+pub fn main(args: Args) {
+    let (rows, cols) = (args.rows, args.cols);
+    let scale_dimension = |x: u32| -> usize { (f64::from(x) / args.scale).floor() as usize };
+    let mut brd = board::Board::new(rows as usize, cols as usize).random();
 
-pub fn main() {
-    let (rows, cols) = (scale_dimension(X_SZ), scale_dimension(Y_SZ));
-    let mut brd = board::Board::new(rows, cols).random();
-
-    let mut window: PistonWindow = WindowSettings::new("Life", [X_SZ, Y_SZ])
-        .exit_on_esc(true)
-        .graphics_api(OpenGL::V3_2)
-        .build()
-        .unwrap();
+    let mut window: PistonWindow = WindowSettings::new(
+        "Life",
+        [f64::from(cols) * args.scale, f64::from(rows) * args.scale],
+    )
+    .exit_on_esc(true)
+    .graphics_api(OpenGL::V3_2)
+    .build()
+    .unwrap();
     let mut running = true;
     let mut cursor = [0, 0];
-    let mut canvas = ImageBuffer::new(rows as u32, cols as u32);
+    let mut canvas = ImageBuffer::new(cols, rows);
     let mut texture_context = TextureContext {
         factory: window.factory.clone(),
         encoder: window.factory.create_command_buffer().into(),
@@ -41,10 +37,7 @@ pub fn main() {
         if let Some(btn) = e.press_args() {
             match btn {
                 Button::Mouse(MouseButton::Left) => {
-                    let (x, y) = (
-                        scale_dimension(cursor[0]) - 1,
-                        scale_dimension(cursor[1]) - 1,
-                    );
+                    let (x, y) = (scale_dimension(cursor[1]), scale_dimension(cursor[0]));
                     brd = brd.toggle(x, y);
                 }
                 Button::Mouse(MouseButton::Right) | Button::Keyboard(Key::Space) => {
@@ -52,7 +45,7 @@ pub fn main() {
                 }
                 Button::Keyboard(Key::C) => brd = brd.clear(),
                 Button::Keyboard(Key::R) => brd = brd.random(),
-                Button::Keyboard(Key::S) => brd = brd.parallel_next_generation(),
+                Button::Keyboard(Key::S) => brd = brd.next_generation(),
                 _ => {}
             };
         }
@@ -60,18 +53,18 @@ pub fn main() {
         if e.render_args().is_some() {
             for (x, y, val) in brd.cells() {
                 let color = if val { LIVE_COLOR } else { DEAD_COLOR };
-                canvas.put_pixel(y as u32, x as u32, Rgba(color));
+                canvas.put_pixel(x as u32, y as u32, Rgba(color));
             }
             texture.update(&mut texture_context, &canvas).unwrap();
             window.draw_2d(&e, |c, g, d| {
                 clear([0.0; 4], g);
-                image(&texture, c.transform.scale(SCALE, SCALE), g);
+                image(&texture, c.transform.scale(args.scale, args.scale), g);
                 texture_context.encoder.flush(d);
             });
         }
 
         if e.update_args().is_some() && running {
-            brd = brd.parallel_next_generation();
+            brd = brd.next_generation();
         }
     }
 }
