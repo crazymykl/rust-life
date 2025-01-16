@@ -14,11 +14,12 @@ fn bench_ten_generations(b: &mut Bencher) {
     let mut brd = Board::new(200, 200).random();
     b.iter(|| {
         for _ in 0..10 {
-            brd = brd.next_generation();
+            brd = brd.serial_next_generation();
         }
     });
 }
 
+#[cfg(feature = "rayon")]
 #[bench]
 fn bench_ten_parallel_generations(b: &mut Bencher) {
     let mut brd = Board::new(200, 200).random();
