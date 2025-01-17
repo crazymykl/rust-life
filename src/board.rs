@@ -1,6 +1,7 @@
 use rand::{distributions::Standard, thread_rng, Rng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use std::error::Error;
 use std::fmt;
 use std::iter::repeat;
 use std::str::FromStr;
@@ -43,7 +44,15 @@ impl Board {
         }
     }
 
-    fn len(&self) -> usize {
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    pub fn len(&self) -> usize {
         self.rows * self.cols
     }
 
@@ -138,7 +147,7 @@ impl Board {
         }
     }
 
-    pub fn clear(self) -> Board {
+    pub fn clear(&self) -> Board {
         Board::new(self.rows, self.cols)
     }
 
@@ -165,34 +174,43 @@ impl fmt::Display for Board {
     }
 }
 
-pub struct ParseBoardErr();
+#[derive(Debug)]
+pub struct ParseBoardErr(String);
+
+impl Error for ParseBoardErr {}
+
+impl fmt::Display for ParseBoardErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl FromStr for Board {
     type Err = ParseBoardErr;
 
     fn from_str(string: &str) -> Result<Board, ParseBoardErr> {
-        let rows: Vec<&str> = string.split_terminator('\n').collect();
+        let rows: Vec<&str> = string
+            .split_terminator('\n')
+            .filter(|row| !row.is_empty())
+            .collect();
         let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
 
         if rows.iter().any(|x| x.len() != row_cnt) {
-            return Err(ParseBoardErr());
+            return Err(ParseBoardErr("row length mismatch".into()));
         };
 
         let chars: String = rows.concat();
 
-        let brd: Option<Vec<bool>> = chars
+        let brd: Result<Vec<bool>, ParseBoardErr> = chars
             .chars()
             .map(|c| match c {
-                LIVE_CELL => Some(true),
-                DEAD_CELL => Some(false),
-                _ => None,
+                LIVE_CELL => Ok(true),
+                DEAD_CELL => Ok(false),
+                c => Err(ParseBoardErr(format!("Unexpected '{c}'"))),
             })
             .collect();
 
-        match brd {
-            Some(board) => Ok(Board::new(row_cnt, col_cnt).next_board(board)),
-            None => Err(ParseBoardErr()),
-        }
+        brd.map(|board| Board::new(row_cnt, col_cnt).next_board(board))
     }
 }
 
@@ -206,7 +224,7 @@ const TEST_BOARDS: [&'static str; 3] = [
 
 #[cfg(test)]
 fn testing_board(n: usize) -> Board {
-    Board::from_str(TEST_BOARDS[n]).ok().unwrap()
+    Board::from_str(TEST_BOARDS[n]).unwrap()
 }
 
 #[test]
