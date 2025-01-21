@@ -8,7 +8,29 @@ mod board;
 use std::{str::FromStr, time::Duration};
 
 use board::Board;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(ValueEnum, Copy, Clone, Debug)]
+enum HorizontalAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(ValueEnum, Copy, Clone, Debug)]
+enum VerticalAlignment {
+    Top,
+    Middle,
+    Bottom,
+}
+
+#[derive(ValueEnum, Copy, Clone, Debug)]
+#[rustfmt::skip]
+enum Alignment {
+    TopLeft   , Top   , TopRight   ,
+    Left      , Center, Right      ,
+    BottomLeft, Bottom, BottomRight,
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -22,8 +44,16 @@ struct Args {
     rows: usize,
 
     /// A board template string
-    #[arg(short, long, conflicts_with_all = ["rows", "cols"], value_parser = Board::from_str)]
+    #[arg(short, long, value_parser = Board::from_str)]
     template: Option<Board>,
+
+    /// Alignment of the template within the world
+    #[arg(short, long, value_enum, default_value_t = Alignment::Center)]
+    align: Alignment,
+
+    /// Custom padding around template, takes 1 to 4 values (overrides alignment)
+    #[arg(short, long, num_args = 1..=4, allow_negative_numbers = true, requires = "template", conflicts_with_all = ["align", "cols", "rows"])]
+    padding: Option<Vec<isize>>,
 
     /// Number of generations to advance the initial pattern
     #[arg(short, long)]
@@ -64,15 +94,30 @@ fn main() {
     if !args.no_gui {
         gui::main(&mut brd, args.scale, args.generations.is_none());
     } else {
-        cli(&mut brd);
+        cli(&mut brd, args.generations.is_some());
     }
     #[cfg(not(feature = "gui"))]
-    cli(brd);
+    cli(brd, args.generations.is_some());
 }
 
 fn make_board(args: &Args) -> Board {
     let mut brd = if let Some(template) = &args.template {
-        template.clone()
+        let (top, right, bottom, left) = if let Some(padding) = &args.padding {
+            match padding[..] {
+                [x] => (x, x, x, x),
+                [vert, horiz] => (vert, horiz, vert, horiz),
+                [t, horiz, b] => (t, horiz, b, horiz),
+                [t, r, b, l] => (t, r, b, l),
+                ref err => unreachable!("bad value for padding :'{err:?}'"),
+            }
+        } else {
+            let vertical_padding = (args.rows - template.rows()) as isize;
+            let horizontal_padding = (args.cols - template.cols()) as isize;
+
+            alignment_padding(args.align, horizontal_padding, vertical_padding)
+        };
+
+        template.pad(top, right, bottom, left)
     } else {
         Board::new(args.rows, args.cols).random()
     };
@@ -84,12 +129,46 @@ fn make_board(args: &Args) -> Board {
     brd
 }
 
-fn cli(brd: &mut Board) {
-    loop {
-        println!("\x1b[H\x1b[2J{}", brd);
-        std::thread::sleep(Duration::from_secs_f64(1.0 / 4.0));
-        *brd = brd.next_generation();
+fn alignment_padding(
+    align: Alignment,
+    horizontal_padding: isize,
+    vertical_padding: isize,
+) -> (isize, isize, isize, isize) {
+    let (top, bottom) = match align {
+        Alignment::TopLeft | Alignment::Top | Alignment::TopRight => (0, vertical_padding),
+        Alignment::Left | Alignment::Center | Alignment::Right => (
+            vertical_padding / 2,
+            vertical_padding / 2 + vertical_padding % 2,
+        ),
+        Alignment::BottomLeft | Alignment::Bottom | Alignment::BottomRight => (vertical_padding, 0),
+    };
+    let (left, right) = match align {
+        Alignment::TopLeft | Alignment::Left | Alignment::BottomLeft => (0, horizontal_padding),
+        Alignment::Top | Alignment::Center | Alignment::Bottom => (
+            horizontal_padding / 2,
+            horizontal_padding / 2 + horizontal_padding % 2,
+        ),
+        Alignment::TopRight | Alignment::Right | Alignment::BottomRight => (horizontal_padding, 0),
+    };
+
+    (top, right, bottom, left)
+}
+
+fn cli(brd: &mut Board, once: bool) {
+    if once {
+        println!("{brd}");
+    } else {
+        loop {
+            clear();
+            println!("{brd}");
+            std::thread::sleep(Duration::from_secs_f64(1.0 / 4.0));
+            *brd = brd.next_generation();
+        }
     }
+}
+
+fn clear() {
+    print!("\x1b[H\x1b[2J");
 }
 
 #[test]
