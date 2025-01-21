@@ -1,6 +1,7 @@
 use rand::{distributions::Standard, thread_rng, Rng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use std::cmp::max;
 use std::error::Error;
 use std::fmt;
 use std::iter::repeat;
@@ -59,12 +60,18 @@ impl Board {
     fn next_board(&self, new_board: Vec<bool>) -> Board {
         assert_eq!(new_board.len(), self.len());
 
+        self.resized_next_board(new_board, self.rows, self.cols)
+    }
+
+    fn resized_next_board(&self, new_board: Vec<bool>, rows: usize, cols: usize) -> Board {
+        assert_eq!(new_board.len(), rows * cols);
+
         Board {
             board: new_board,
             born: Arc::clone(&self.born),
             survive: Arc::clone(&self.survive),
-            rows: self.rows,
-            cols: self.cols,
+            rows,
+            cols,
         }
     }
 
@@ -158,6 +165,43 @@ impl Board {
             .map(|(i, v)| (i % self.cols, i / self.cols, *v))
             .collect()
     }
+
+    pub fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Board {
+        let new_cell_values = repeat(false);
+        let (rows, cols) = (
+            max(0, top + self.rows as isize + bottom) as usize,
+            max(0, left + self.cols as isize + right) as usize,
+        );
+        let dst_cells = new_cell_values
+            .clone()
+            .take(if top > 0 { top as usize * cols } else { 0 })
+            .chain(
+                self.board
+                    .chunks(max(1, self.cols))
+                    .skip(if top < 0 { -top as usize } else { 0 })
+                    .take(rows)
+                    .flat_map(|row| {
+                        new_cell_values
+                            .clone()
+                            .take(if left > 0 { left as usize } else { 0 })
+                            .chain(
+                                row.iter()
+                                    .copied()
+                                    .skip(if left < 0 { -left as usize } else { 0 })
+                                    .chain(new_cell_values.clone()),
+                            )
+                            .take(cols)
+                    }),
+            )
+            .chain(new_cell_values.clone().take(if bottom > 0 {
+                bottom as usize * cols
+            } else {
+                0
+            }))
+            .collect();
+
+        self.resized_next_board(dst_cells, rows, cols)
+    }
 }
 
 impl fmt::Display for Board {
@@ -193,9 +237,9 @@ impl FromStr for Board {
             .split_terminator('\n')
             .filter(|row| !row.is_empty())
             .collect();
-        let (row_cnt, col_cnt) = (rows[0].len(), rows.len());
+        let (row_cnt, col_cnt) = (rows.len(), rows.get(0).map_or(0, |x| x.len()));
 
-        if rows.iter().any(|x| x.len() != row_cnt) {
+        if rows.iter().any(|x| x.len() != col_cnt) {
             return Err(ParseBoardErr("row length mismatch".into()));
         };
 
@@ -216,10 +260,16 @@ impl FromStr for Board {
 
 #[cfg(test)]
 #[rustfmt::skip]
-const TEST_BOARDS: [&'static str; 3] = [
+const TEST_BOARDS: [&'static str; 9] = [
     ".@.\n.@@\n.@@",
     "...\n@@@\n...",
-    ".@.\n.@.\n.@."
+    ".@.\n.@.\n.@.",
+    "@",
+    "...\n.@.\n...",
+    ".@",
+    "@.",
+    "@\n.",
+    ".\n@",
 ];
 
 #[cfg(test)]
@@ -284,4 +334,18 @@ fn test_toggle() {
     let brd = testing_board(0);
 
     assert_eq!(brd.toggle(0, 0).toggle(0, 0), brd);
+}
+
+#[test]
+fn test_pad() {
+    assert_eq!(testing_board(3).pad(1, 1, 1, 1), testing_board(4));
+    assert_eq!(testing_board(3).pad(0, 0, 0, 1), testing_board(5));
+    assert_eq!(testing_board(3).pad(0, 1, 0, 0), testing_board(6));
+    assert_eq!(testing_board(3).pad(0, 0, 1, 0), testing_board(7));
+    assert_eq!(testing_board(3).pad(1, 0, 0, 0), testing_board(8));
+    assert_eq!(testing_board(4).pad(-1, -1, -1, -1), testing_board(3));
+    assert_eq!(testing_board(4).pad(-1, -1, -1, 0), testing_board(5));
+    assert_eq!(testing_board(4).pad(-1, 0, -1, -1), testing_board(6));
+    assert_eq!(testing_board(4).pad(-1, -1, 0, -1), testing_board(7));
+    assert_eq!(testing_board(4).pad(0, -1, -1, -1), testing_board(8));
 }
