@@ -97,7 +97,7 @@ fn main() {
         cli(&mut brd, args.generations.is_some());
     }
     #[cfg(not(feature = "gui"))]
-    cli(brd, args.generations.is_some());
+    cli(&mut brd, args.generations.is_some());
 }
 
 fn make_board(args: &Args) -> Board {
