@@ -1,5 +1,5 @@
 use crate::board::Board;
-use ::image::{ImageBuffer, Rgba};
+use ::image::ImageBuffer;
 use piston_window::*;
 
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
@@ -17,13 +17,16 @@ pub fn main(brd: &mut Board, scale: f64, init_running: bool) {
             .unwrap();
     let mut running = init_running;
     let mut cursor = [0.0, 0.0];
-    let mut canvas = ImageBuffer::new(cols, rows);
     let mut texture_context = TextureContext {
         factory: window.factory.clone(),
         encoder: window.factory.create_command_buffer().into(),
     };
-    let mut texture =
-        Texture::from_image(&mut texture_context, &canvas, &TextureSettings::new()).unwrap();
+    let mut texture = Texture::from_image(
+        &mut texture_context,
+        &ImageBuffer::new(cols, rows),
+        &TextureSettings::new(),
+    )
+    .unwrap();
 
     while let Some(e) = window.next() {
         e.mouse_cursor(|xy| {
@@ -47,11 +50,17 @@ pub fn main(brd: &mut Board, scale: f64, init_running: bool) {
         }
 
         if e.render_args().is_some() {
-            for (x, y, val) in brd.cells() {
-                let color = if val { LIVE_COLOR } else { DEAD_COLOR };
-                canvas.put_pixel(x as u32, y as u32, Rgba(color));
-            }
-            texture.update(&mut texture_context, &canvas).unwrap();
+            let cells = brd
+                .iter()
+                .flat_map(|&val| if val { LIVE_COLOR } else { DEAD_COLOR })
+                .collect();
+
+            texture
+                .update(
+                    &mut texture_context,
+                    &ImageBuffer::from_raw(cols, rows, cells).unwrap(),
+                )
+                .unwrap();
             window.draw_2d(&e, |c, g, d| {
                 image(&texture, c.transform.scale(scale, scale), g);
                 texture_context.encoder.flush(d);
