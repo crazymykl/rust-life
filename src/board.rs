@@ -158,14 +158,6 @@ impl Board {
         Board::new(self.rows, self.cols)
     }
 
-    pub fn cells(&self) -> Vec<(usize, usize, bool)> {
-        self.board
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i % self.cols, i / self.cols, *v))
-            .collect()
-    }
-
     pub fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Board {
         let new_cell_values = repeat(false);
         let (rows, cols) = (
@@ -201,6 +193,10 @@ impl Board {
             .collect();
 
         self.resized_next_board(dst_cells, rows, cols)
+    }
+
+    pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, bool> {
+        self.board.iter()
     }
 }
 
@@ -319,7 +315,7 @@ fn test_parallel_next_generation() {
 fn test_clear() {
     let brd = testing_board(0);
 
-    assert!(brd.clear().cells().iter().all(|&(_, _, x)| !x));
+    assert!(brd.clear().iter().all(|x| !x));
 }
 
 #[test]
