@@ -5,7 +5,7 @@ use piston_window::*;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
-pub fn main(brd: &mut Board, scale: f64, init_running: bool) {
+pub fn main(brd: &mut Board, scale: f64, ups: u64, init_running: bool) {
     let (rows, cols) = (brd.rows() as u32, brd.cols() as u32);
     let scale_dimension = |x: f64| -> usize { (x / scale).floor() as usize };
 
@@ -15,6 +15,7 @@ pub fn main(brd: &mut Board, scale: f64, init_running: bool) {
             .graphics_api(OpenGL::V3_2)
             .build()
             .unwrap();
+    window.set_ups(ups);
     let mut running = init_running;
     let mut cursor = [0.0, 0.0];
     let mut texture_context = TextureContext {
@@ -24,7 +25,7 @@ pub fn main(brd: &mut Board, scale: f64, init_running: bool) {
     let mut texture = Texture::from_image(
         &mut texture_context,
         &ImageBuffer::new(cols, rows),
-        &TextureSettings::new(),
+        &TextureSettings::new().mag(Filter::Nearest),
     )
     .unwrap();
 
