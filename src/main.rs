@@ -5,7 +5,10 @@ mod benchmarks;
 
 mod board;
 
-use std::{str::FromStr, time::Duration};
+use std::{
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 use board::Board;
 use clap::{Parser, ValueEnum};
@@ -68,15 +71,19 @@ struct Args {
     /// Disable GUI
     #[arg(long)]
     no_gui: bool,
+
+    /// Updates per second (target)
+    #[arg(short, long, default_value_t = 120)]
+    ups: u64,
 }
 
 #[cfg(feature = "gui")]
 fn valid_scale(s: &str) -> Result<f64, String> {
     const MIN_SCALE: f64 = 0.1;
-    const MAX_SCALE: f64 = 10.0;
+    const MAX_SCALE: f64 = 100.0;
 
     match s.parse().map_err(|s| format!("{s}"))? {
-        n @ 0.1..=10.0 => Ok(n),
+        n @ MIN_SCALE..=MAX_SCALE => Ok(n),
         _ => Err(format!(
             "Scale must be between {MIN_SCALE} and {MAX_SCALE} (inclusive)"
         )),
@@ -92,12 +99,12 @@ fn main() {
 
     #[cfg(feature = "gui")]
     if !args.no_gui {
-        gui::main(&mut brd, args.scale, args.generations.is_none());
+        gui::main(&mut brd, args.scale, args.ups, args.generations.is_none());
     } else {
-        cli(&mut brd, args.generations.is_some());
+        cli(&mut brd, args.ups, args.generations.is_some());
     }
     #[cfg(not(feature = "gui"))]
-    cli(&mut brd, args.generations.is_some());
+    cli(&mut brd, args.ups, args.generations.is_some());
 }
 
 fn make_board(args: &Args) -> Board {
@@ -154,15 +161,18 @@ fn alignment_padding(
     (top, right, bottom, left)
 }
 
-fn cli(brd: &mut Board, once: bool) {
+fn cli(brd: &mut Board, ups: u64, once: bool) {
     if once {
         println!("{brd}");
     } else {
+        let frame_time = Duration::from_secs_f64(1.0 / ups as f64);
+        let mut frame_start;
         loop {
+            frame_start = Instant::now();
             clear();
             println!("{brd}");
-            std::thread::sleep(Duration::from_secs_f64(1.0 / 4.0));
             *brd = brd.next_generation();
+            std::thread::sleep(frame_time - Instant::now().duration_since(frame_start));
         }
     }
 }
