@@ -172,7 +172,9 @@ fn cli(brd: &mut Board, ups: u64, once: bool) {
             clear();
             println!("{brd}");
             *brd = brd.next_generation();
-            std::thread::sleep(frame_time - Instant::now().duration_since(frame_start));
+            std::thread::sleep(
+                frame_time.saturating_sub(Instant::now().duration_since(frame_start)),
+            );
         }
     }
 }
