@@ -5,7 +5,14 @@ use piston_window::*;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
-pub fn main(brd: &mut Board, scale: f64, ups: u64, init_running: bool) {
+pub fn run(
+    brd: &mut Board,
+    scale: f64,
+    ups: u64,
+    init_running: bool,
+    generation_limit: Option<usize>,
+    exit_on_finish: bool,
+) {
     let (rows, cols) = (brd.rows() as u32, brd.cols() as u32);
     let scale_dimension = |x: f64| -> usize { (x / scale).floor() as usize };
 
@@ -41,7 +48,7 @@ pub fn main(brd: &mut Board, scale: f64, ups: u64, init_running: bool) {
                     *brd = brd.toggle(x, y);
                 }
                 Button::Mouse(MouseButton::Right) | Button::Keyboard(Key::Space) => {
-                    running = !running
+                    running = !running;
                 }
                 Button::Keyboard(Key::C) => *brd = brd.clear(),
                 Button::Keyboard(Key::R) => *brd = brd.random(),
@@ -69,7 +76,15 @@ pub fn main(brd: &mut Board, scale: f64, ups: u64, init_running: bool) {
         }
 
         if e.update_args().is_some() && running {
-            *brd = brd.next_generation();
+            if Some(brd.generation()) == generation_limit {
+                if exit_on_finish {
+                    window.set_should_close(true);
+                } else {
+                    running = false;
+                }
+            } else {
+                *brd = brd.next_generation();
+            }
         }
     }
 }
