@@ -18,6 +18,7 @@ pub struct Board {
     born: Arc<Vec<usize>>,
     rows: usize,
     cols: usize,
+    generation: usize,
 }
 
 impl Board {
@@ -42,6 +43,7 @@ impl Board {
             survive: Arc::new(survive),
             rows,
             cols,
+            generation: 0,
         }
     }
 
@@ -51,6 +53,10 @@ impl Board {
 
     pub fn cols(&self) -> usize {
         self.cols
+    }
+
+    pub fn generation(&self) -> usize {
+        self.generation
     }
 
     pub fn len(&self) -> usize {
@@ -72,6 +78,14 @@ impl Board {
             survive: Arc::clone(&self.survive),
             rows,
             cols,
+            generation: self.generation,
+        }
+    }
+
+    fn next_generation_board(&self, new_board: Vec<bool>) -> Board {
+        Board {
+            generation: self.generation + 1,
+            ..self.next_board(new_board)
         }
     }
 
@@ -90,15 +104,15 @@ impl Board {
             .map(|cell| self.successor_cell(cell))
             .collect();
 
-        self.next_board(new_brd)
+        self.next_generation_board(new_brd)
     }
 
     pub fn next_generation(&self) -> Board {
-        if cfg!(feature = "rayon") {
-            self.parallel_next_generation()
-        } else {
-            self.serial_next_generation()
-        }
+        #[cfg(feature = "rayon")]
+        let next = self.parallel_next_generation();
+        #[cfg(not(feature = "rayon"))]
+        let next = self.serial_next_generation();
+        next
     }
 
     #[cfg(feature = "rayon")]
@@ -108,7 +122,7 @@ impl Board {
             .map(|cell| self.successor_cell(cell))
             .collect();
 
-        self.next_board(new_brd)
+        self.next_generation_board(new_brd)
     }
 
     #[cfg(not(feature = "rayon"))]
@@ -195,7 +209,7 @@ impl Board {
         self.resized_next_board(dst_cells, rows, cols)
     }
 
-    pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, bool> {
+    pub fn iter(&self) -> std::slice::Iter<bool> {
         self.board.iter()
     }
 }
@@ -214,7 +228,7 @@ impl fmt::Display for Board {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ParseBoardErr(String);
 
 impl Error for ParseBoardErr {}
@@ -233,7 +247,7 @@ impl FromStr for Board {
             .split_terminator('\n')
             .filter(|row| !row.is_empty())
             .collect();
-        let (row_cnt, col_cnt) = (rows.len(), rows.get(0).map_or(0, |x| x.len()));
+        let (row_cnt, col_cnt) = (rows.len(), rows.first().map_or(0, |x| x.len()));
 
         if rows.iter().any(|x| x.len() != col_cnt) {
             return Err(ParseBoardErr("row length mismatch".into()));
@@ -273,9 +287,29 @@ fn testing_board(n: usize) -> Board {
     Board::from_str(TEST_BOARDS[n]).unwrap()
 }
 
+#[cfg(test)]
+fn testing_board_generation(n: usize, generation: usize) -> Board {
+    Board {
+        generation,
+        ..testing_board(n)
+    }
+}
+
 #[test]
 fn test_board_str_conversion() {
     assert_eq!(format!("{}", testing_board(0)), TEST_BOARDS[0]);
+}
+
+#[test]
+fn test_board_str_conversion_error() {
+    assert_eq!(
+        Board::from_str("!"),
+        Err(ParseBoardErr("Unexpected '!'".into()))
+    );
+    assert_eq!(
+        Board::from_str("..\n.").unwrap_err().to_string(),
+        "row length mismatch"
+    );
 }
 
 #[test]
@@ -294,12 +328,22 @@ fn test_live_count() {
 
 #[test]
 fn test_next_generation() {
-    assert_eq!(testing_board(1).next_generation(), testing_board(2));
+    assert_eq!(
+        testing_board(1).next_generation(),
+        testing_board_generation(2, 1)
+    );
+    assert_eq!(testing_board(1).generation(), 0);
+    assert_eq!(testing_board(1).next_generation().generation(), 1);
 }
 
 #[test]
 fn test_serial_next_generation() {
-    assert_eq!(testing_board(1).serial_next_generation(), testing_board(2));
+    assert_eq!(
+        testing_board(1).serial_next_generation(),
+        testing_board_generation(2, 1)
+    );
+    assert_eq!(testing_board(1).generation(), 0);
+    assert_eq!(testing_board(1).serial_next_generation().generation(), 1);
 }
 
 #[cfg(feature = "rayon")]
@@ -307,8 +351,10 @@ fn test_serial_next_generation() {
 fn test_parallel_next_generation() {
     assert_eq!(
         testing_board(1).parallel_next_generation(),
-        testing_board(2)
+        testing_board_generation(2, 1)
     );
+    assert_eq!(testing_board(1).generation(), 0);
+    assert_eq!(testing_board(1).parallel_next_generation().generation(), 1);
 }
 
 #[test]
@@ -329,7 +375,11 @@ fn test_random() {
 fn test_toggle() {
     let brd = testing_board(0);
 
+    assert_ne!(brd.toggle(0, 0), brd);
     assert_eq!(brd.toggle(0, 0).toggle(0, 0), brd);
+    // Co-ords outside the board are a no-op
+    assert_eq!(brd.toggle(999, 0), brd);
+    assert_eq!(brd.toggle(0, 999), brd);
 }
 
 #[test]

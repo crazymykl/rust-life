@@ -9,7 +9,7 @@ env:
 
 jobs:
   build_and_test:
-    name: rust-life - latest
+    name: test
     strategy:
       matrix:
         toolchain:
@@ -26,10 +26,48 @@ jobs:
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - run: rustup component add rustfmt
       - run: cargo fmt --check
+      - run: rustup component add clippy
+      - run: cargo clippy -- -D clippy::all
       - run: cargo build --verbose --no-default-features
       - run: cargo test --verbose --no-default-features
       - run: cargo clean
       - run: cargo build --verbose
-      - run: cargo test --verbose
-      - if: ${{ matrix.toolchain == 'nightly' }}
-        run: cargo bench --verbose --features unstable
+      - if: ${{ matrix.os }} == "windows-latest"
+        uses: ssciwr/setup-mesa-dist-win@v2
+      - uses: coactions/setup-xvfb@v1
+        with:
+          run: cargo test --verbose
+
+  bench:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps: 
+      - uses: actions/checkout@v4
+      - run: rustup update nightly && rustup default nightly
+      - run: cargo build --release --verbose
+      - if: ${{ matrix.os }} == "windows-latest"
+        uses: ssciwr/setup-mesa-dist-win@v2
+      - uses: coactions/setup-xvfb@v1
+        with: 
+          run: cargo bench --verbose --features unstable
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable && rustup default stable
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: coactions/setup-xvfb@v1
+        with:
+          run: cargo llvm-cov --codecov --no-cfg-coverage --output-path codecov.json
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: true
+      

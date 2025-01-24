@@ -2,6 +2,7 @@ extern crate test;
 
 use self::test::Bencher;
 use crate::board::Board;
+use assert_cmd::Command;
 
 #[bench]
 fn bench_random(b: &mut Bencher) {
@@ -28,5 +29,31 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
         for _ in 0..10 {
             brd = brd.parallel_next_generation();
         }
+    });
+}
+
+fn bin() -> Command {
+    Command::cargo_bin("rust-life").unwrap()
+}
+
+#[bench]
+fn bench_ten_cli_generations(b: &mut Bencher) {
+    b.iter(|| {
+        bin()
+            .args([
+                #[cfg(feature = "gui")]
+                "--no-gui",
+                "-G10",
+            ])
+            .assert()
+            .success();
+    });
+}
+
+#[cfg(feature = "gui")]
+#[bench]
+fn bench_ten_gui_generations(b: &mut Bencher) {
+    b.iter(|| {
+        bin().args(["-G10", "-x"]).assert().success();
     });
 }
