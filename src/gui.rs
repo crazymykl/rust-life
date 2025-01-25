@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use crate::board::Board;
 use ::image::ImageBuffer;
 use piston_window::*;
@@ -13,15 +15,16 @@ pub fn run(
     generation_limit: Option<usize>,
     exit_on_finish: bool,
 ) {
-    let (rows, cols) = (brd.rows() as u32, brd.cols() as u32);
     let scale_dimension = |x: f64| -> usize { (x / scale).floor() as usize };
 
-    let mut window: PistonWindow =
-        WindowSettings::new("Life", [cols as f64 * scale, rows as f64 * scale])
-            .exit_on_esc(true)
-            .graphics_api(OpenGL::V3_2)
-            .build()
-            .unwrap();
+    let mut window: PistonWindow = WindowSettings::new(
+        "Life",
+        [brd.cols() as f64 * scale, brd.rows() as f64 * scale],
+    )
+    .exit_on_esc(true)
+    .graphics_api(OpenGL::V3_2)
+    .build()
+    .unwrap();
     window.set_ups(ups);
     let mut running = init_running;
     let mut cursor = [0.0, 0.0];
@@ -31,7 +34,7 @@ pub fn run(
     };
     let mut texture = Texture::from_image(
         &mut texture_context,
-        &ImageBuffer::new(cols, rows),
+        &ImageBuffer::new(brd.cols() as u32, brd.rows() as u32),
         &TextureSettings::new().mag(Filter::Nearest),
     )
     .unwrap();
@@ -66,7 +69,7 @@ pub fn run(
             texture
                 .update(
                     &mut texture_context,
-                    &ImageBuffer::from_raw(cols, rows, cells).unwrap(),
+                    &ImageBuffer::from_raw(brd.cols() as u32, brd.rows() as u32, cells).unwrap(),
                 )
                 .unwrap();
             window.draw_2d(&e, |c, g, d| {
@@ -84,6 +87,23 @@ pub fn run(
                 }
             } else {
                 *brd = brd.next_generation();
+            }
+        }
+
+        if let Some(r) = e.resize_args() {
+            let (old_cols, old_rows) = (brd.cols(), brd.rows());
+            let (cols, rows) = (
+                max(old_cols, scale_dimension(r.window_size[0])),
+                max(old_rows, scale_dimension(r.window_size[1])),
+            );
+            if cols != old_cols || rows != old_rows {
+                *brd = brd.pad(0, (cols - old_cols) as isize, (rows - old_rows) as isize, 0);
+                texture = Texture::from_image(
+                    &mut texture_context,
+                    &ImageBuffer::new(cols as u32, rows as u32),
+                    &TextureSettings::new().mag(Filter::Nearest),
+                )
+                .unwrap();
             }
         }
     }
