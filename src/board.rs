@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::cmp::max;
 use std::error::Error;
 use std::fmt;
-use std::iter::repeat;
+use std::iter::{repeat, repeat_n};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ impl Board {
         born: Vec<usize>,
         survive: Vec<usize>,
     ) -> Board {
-        let new_board = repeat(false).take(rows * cols).collect();
+        let new_board = repeat_n(false, rows * cols).collect();
 
         Board {
             board: new_board,
