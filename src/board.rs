@@ -59,8 +59,14 @@ impl Board {
         self.generation
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.rows * self.cols
+    }
+
+    #[allow(dead_code)]
+    pub fn population(&self) -> usize {
+        self.iter().filter(|&&x| x).count()
     }
 
     fn next_board(&self, new_board: Vec<bool>) -> Board {
@@ -327,6 +333,14 @@ fn test_live_count() {
 }
 
 #[test]
+fn test_population() {
+    assert_eq!(testing_board(0).population(), 5);
+    assert_eq!(testing_board(1).population(), 3);
+    assert_eq!(testing_board(2).population(), 3);
+    assert_eq!(testing_board(3).population(), 1);
+}
+
+#[test]
 fn test_next_generation() {
     assert_eq!(
         testing_board(1).next_generation(),
@@ -355,6 +369,13 @@ fn test_parallel_next_generation() {
     );
     assert_eq!(testing_board(1).generation(), 0);
     assert_eq!(testing_board(1).parallel_next_generation().generation(), 1);
+}
+
+#[cfg(not(feature = "rayon"))]
+#[test]
+#[should_panic]
+fn test_parallel_next_generation() {
+    testing_board(1).parallel_next_generation();
 }
 
 #[test]

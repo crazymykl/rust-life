@@ -3,113 +3,39 @@
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
 
-mod board;
-
-use std::{
-    str::FromStr,
-    time::{Duration, Instant},
-};
-
-use board::Board;
-use clap::{Parser, ValueEnum};
-
-pub const CLEAR: &str = "\x1b[H\x1b[2J";
-
-#[derive(ValueEnum, Copy, Clone, Debug)]
-#[rustfmt::skip]
-enum Alignment {
-    TopLeft   , Top   , TopRight   ,
-    Left      , Center, Right      ,
-    BottomLeft, Bottom, BottomRight,
-}
-
-#[derive(Parser, Debug)]
-#[command(version, about)]
-struct Args {
-    /// Number of columns of in the board
-    #[arg(short, long, default_value_t = 640)]
-    cols: usize,
-
-    /// Number of rows of in the board
-    #[arg(short, long, default_value_t = 400)]
-    rows: usize,
-
-    /// A board template string
-    #[arg(short, long, value_parser = Board::from_str)]
-    template: Option<Board>,
-
-    /// Alignment of the template within the world
-    #[arg(short, long, value_enum, default_value_t = Alignment::Center)]
-    align: Alignment,
-
-    /// Custom padding around template, takes 1 to 4 values (overrides alignment)
-    #[arg(short, long, num_args = 1..=4, allow_negative_numbers = true, requires = "template", conflicts_with_all = ["align", "cols", "rows"])]
-    padding: Option<Vec<isize>>,
-
-    /// Number of generations to advance the template for the initial pattern
-    #[arg(short, long)]
-    generations: Option<usize>,
-
-    /// Number of generations to display before stopping (runs forever if not given)
-    #[arg(short = 'G', long)]
-    generation_limit: Option<usize>,
-
-    #[cfg(feature = "gui")]
-    /// Scale factor (pixels per cell side)
-    #[arg(short, long, default_value_t=2.0, value_parser = valid_scale, conflicts_with = "no_gui")]
-    scale: f64,
-
-    #[cfg(feature = "gui")]
-    /// Close GUI window after final generation
-    #[arg(
-        short = 'x',
-        long,
-        requires = "generation_limit",
-        conflicts_with = "no_gui"
-    )]
-    exit_on_finish: bool,
-
-    #[cfg(feature = "gui")]
-    /// Disable GUI
-    #[arg(long)]
-    no_gui: bool,
-
-    /// Updates per second (target)
-    #[arg(short, long, default_value_t = 120)]
-    ups: u64,
-}
-
-#[cfg(feature = "gui")]
-fn valid_scale(s: &str) -> Result<f64, String> {
-    const MIN_SCALE: f64 = 0.1;
-    const MAX_SCALE: f64 = 100.0;
-
-    match s.parse().map_err(|s| format!("{s}"))? {
-        n @ MIN_SCALE..=MAX_SCALE => Ok(n),
-        _ => Err(format!(
-            "Scale must be between {MIN_SCALE} and {MAX_SCALE} (inclusive)"
-        )),
-    }
-}
-
 #[cfg(feature = "gui")]
 mod gui;
 
+#[cfg(all(feature = "test_mainthread", feature = "gui"))]
+pub use gui::test_helper::EXAMPLES;
+
+mod board;
+
+use std::time::{Duration, Instant};
+
+use board::Board;
+
+pub const CLEAR: &str = "\x1b[H\x1b[2J";
+
+mod args;
+
+use args::{parse_args, Alignment, Args};
+
 pub fn run() {
-    let args = Args::parse();
+    let args = parse_args();
     let cli_run_gens = args.generation_limit.or(if args.generations.is_some() {
         Some(0)
     } else {
         None
     });
-    let mut brd = make_board(&args);
+    let brd = make_board(&args);
 
     #[cfg(feature = "gui")]
     if args.no_gui {
-        cli(&mut brd, args.ups, cli_run_gens);
+        cli(brd, args.ups, cli_run_gens);
     } else {
         gui::run(
-            &mut brd,
+            brd,
             args.scale,
             args.ups,
             args.generations.is_none() || args.generation_limit.is_some(),
@@ -118,19 +44,13 @@ pub fn run() {
         );
     }
     #[cfg(not(feature = "gui"))]
-    cli(&mut brd, args.ups, cli_run_gens);
+    cli(brd, args.ups, cli_run_gens);
 }
 
 fn make_board(args: &Args) -> Board {
     let mut brd = if let Some(template) = &args.template {
         let (top, right, bottom, left) = if let Some(padding) = &args.padding {
-            match padding[..] {
-                [x] => (x, x, x, x),
-                [vert, horiz] => (vert, horiz, vert, horiz),
-                [t, horiz, b] => (t, horiz, b, horiz),
-                [t, r, b, l] => (t, r, b, l),
-                ref err => unreachable!("bad value for padding :'{err:?}'"),
-            }
+            parse_padding(padding)
         } else {
             let vertical_padding = (args.rows - template.rows()) as isize;
             let horizontal_padding = (args.cols - template.cols()) as isize;
@@ -148,6 +68,16 @@ fn make_board(args: &Args) -> Board {
     }
 
     brd
+}
+
+fn parse_padding(padding: &[isize]) -> (isize, isize, isize, isize) {
+    match *padding {
+        [x] => (x, x, x, x),
+        [vert, horiz] => (vert, horiz, vert, horiz),
+        [t, horiz, b] => (t, horiz, b, horiz),
+        [t, r, b, l] => (t, r, b, l),
+        ref err => unreachable!("bad value for padding: '{err:?}'"),
+    }
 }
 
 fn alignment_padding(
@@ -175,7 +105,7 @@ fn alignment_padding(
     (top, right, bottom, left)
 }
 
-fn cli(brd: &mut Board, ups: u64, run_gens: Option<usize>) {
+fn cli(mut brd: Board, ups: u64, run_gens: Option<usize>) {
     if run_gens == Some(0) {
         println!("{brd}");
     } else {
@@ -185,7 +115,7 @@ fn cli(brd: &mut Board, ups: u64, run_gens: Option<usize>) {
         while Some(brd.generation()) <= run_gens {
             frame_start = Instant::now();
             println!("{CLEAR}{brd}");
-            *brd = brd.next_generation();
+            brd = brd.next_generation();
             std::thread::sleep(
                 frame_time.saturating_sub(Instant::now().duration_since(frame_start)),
             );
@@ -197,4 +127,40 @@ fn cli(brd: &mut Board, ups: u64, run_gens: Option<usize>) {
 fn verify_cli() {
     use clap::CommandFactory;
     Args::command().debug_assert();
+}
+
+#[test]
+fn test_parse_padding() {
+    assert_eq!(parse_padding(&[1]), (1, 1, 1, 1));
+    assert_eq!(parse_padding(&[1, 2]), (1, 2, 1, 2));
+    assert_eq!(parse_padding(&[1, 2, 3]), (1, 2, 3, 2));
+    assert_eq!(parse_padding(&[1, 2, 3, 4]), (1, 2, 3, 4));
+}
+
+#[test]
+#[should_panic = "bad value for padding: '[]'"]
+fn test_parse_padding_invalid() {
+    parse_padding(&[]);
+}
+
+#[test]
+#[should_panic = "bad value for padding: '[1, 2, 3, 4, 5]'"]
+fn test_parse_padding_invalid_2() {
+    parse_padding(&[1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn test_alignment_padding() {
+    assert_eq!(alignment_padding(Alignment::Top, 2, 2), (0, 1, 2, 1));
+    assert_eq!(alignment_padding(Alignment::TopLeft, 2, 2), (0, 2, 2, 0));
+    assert_eq!(alignment_padding(Alignment::TopRight, 2, 2), (0, 0, 2, 2));
+    assert_eq!(alignment_padding(Alignment::Center, 2, 2), (1, 1, 1, 1));
+    assert_eq!(alignment_padding(Alignment::Left, 2, 2), (1, 2, 1, 0));
+    assert_eq!(alignment_padding(Alignment::Right, 2, 2), (1, 0, 1, 2));
+    assert_eq!(alignment_padding(Alignment::Bottom, 2, 2), (2, 1, 0, 1));
+    assert_eq!(alignment_padding(Alignment::BottomLeft, 2, 2), (2, 2, 0, 0));
+    assert_eq!(
+        alignment_padding(Alignment::BottomRight, 2, 2),
+        (2, 0, 0, 2)
+    );
 }

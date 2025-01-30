@@ -12,7 +12,16 @@ edition = '2021'
 
 default = ["gui", "rayon"]
 unstable = []
+test_mainthread = []
 gui = ["dep:piston_window", "dep:image"]
+
+[[test]]
+
+name = "mainthread"
+harness = false
+path = "tests/test_mainthread.rs"
+required-features = ["test_mainthread", "gui"]
+
 
 [dependencies]
 
@@ -25,3 +34,4 @@ clap = { version = "4.5.26", features = ["derive"] }
 [dev-dependencies]
 
 assert_cmd = "2.0.16"
+libtest-mimic = "0.8.1"
