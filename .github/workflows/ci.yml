@@ -21,22 +21,33 @@ jobs:
           - macos-latest
           - windows-latest
     runs-on: ${{ matrix.os }}
+    env: 
+      NEXTEST_PROFILE: ${{ matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable' && 'ci' || 'default' }}
+      
     steps:
       - uses: actions/checkout@v4
-      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
-      - run: rustup component add rustfmt
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: taiki-e/install-action@nextest
       - run: cargo fmt --check
-      - run: rustup component add clippy
-      - run: cargo clippy -- -D clippy::all
       - run: cargo build --verbose --no-default-features
-      - run: cargo test --verbose --no-default-features
+      - run: cargo clippy -- -D clippy::all
+      - run: cargo nextest run --verbose --no-default-features
       - run: cargo clean
-      - run: cargo build --verbose
+      - run: cargo build --verbose --features test_mainthread
       - if: ${{ matrix.os }} == "windows-latest"
         uses: ssciwr/setup-mesa-dist-win@v2
       - uses: coactions/setup-xvfb@v1
         with:
-          run: cargo test --verbose
+          run: cargo nextest run --verbose --features test_mainthread
+      - name: Upload test results to Codecov
+        if: ${{ env.NEXTEST_PROFILE == 'ci' && !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/nextest/ci/junit.xml
 
   bench:
     strategy:
@@ -48,7 +59,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: 
       - uses: actions/checkout@v4
-      - run: rustup update nightly && rustup default nightly
+      - uses: dtolnay/rust-toolchain@nightly
       - run: cargo build --release --verbose
       - if: ${{ matrix.os }} == "windows-latest"
         uses: ssciwr/setup-mesa-dist-win@v2
@@ -60,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup update stable && rustup default stable
+      - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@nextest
       - uses: coactions/setup-xvfb@v1
