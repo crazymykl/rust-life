@@ -145,5 +145,5 @@ fn test_gui_scale() {
 #[test]
 #[cfg(feature = "gui")]
 fn test_gui_run() {
-    bin().args(["-G5", "-x"]).assert().success();
+    bin().args(["-g0", "-G5", "-x"]).assert().success();
 }
