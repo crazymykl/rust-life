@@ -1,4 +1,4 @@
-use rand::{distributions::Standard, thread_rng, Rng};
+use rand::{distr::StandardUniform, rng, Rng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::cmp::max;
@@ -96,8 +96,8 @@ impl Board {
     }
 
     pub fn random(&self) -> Board {
-        let brd = thread_rng()
-            .sample_iter(&Standard)
+        let brd = rng()
+            .sample_iter(&StandardUniform)
             .take(self.len())
             .collect();
 
