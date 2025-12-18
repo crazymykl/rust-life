@@ -33,6 +33,7 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
 }
 
 fn bin() -> Command {
+    #[allow(deprecated)] // the replacement macro won't work at compile time
     Command::cargo_bin("rust-life").unwrap()
 }
 
