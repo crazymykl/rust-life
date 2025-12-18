@@ -1,6 +1,6 @@
+use crate::Board;
 #[cfg(feature = "gui")]
 use crate::gui;
-use crate::Board;
 use clap::{Parser, ValueEnum};
 use std::str::FromStr;
 

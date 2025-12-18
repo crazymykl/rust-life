@@ -6,28 +6,21 @@ mod benchmarks;
 #[cfg(feature = "gui")]
 mod gui;
 
+mod args;
+mod board;
+
+use args::{Alignment, Args, parse_args};
+use board::Board;
+use std::time::{Duration, Instant};
+
 #[cfg(all(feature = "test_mainthread", feature = "gui"))]
 pub use gui::test_helper::EXAMPLES;
 
-mod board;
-
-use std::time::{Duration, Instant};
-
-use board::Board;
-
 pub const CLEAR: &str = "\x1b[H\x1b[2J";
-
-mod args;
-
-use args::{parse_args, Alignment, Args};
 
 pub fn run() {
     let args = parse_args();
-    let cli_run_gens = args.generation_limit.or(if args.generations.is_some() {
-        Some(0)
-    } else {
-        None
-    });
+    let cli_run_gens = args.generation_limit.or(args.generations.and(Some(0)));
     let brd = make_board(&args);
 
     #[cfg(feature = "gui")]
@@ -112,7 +105,7 @@ fn cli(mut brd: Board, ups: u64, run_gens: Option<usize>) {
         let frame_time: Duration = Duration::from_secs_f64(1.0 / ups as f64);
         let mut frame_start;
 
-        while Some(brd.generation()) <= run_gens {
+        while run_gens.is_none() || Some(brd.generation()) <= run_gens {
             frame_start = Instant::now();
             println!("{CLEAR}{brd}");
             brd = brd.next_generation();

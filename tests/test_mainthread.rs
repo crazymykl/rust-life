@@ -4,7 +4,7 @@
 
 use std::panic::catch_unwind;
 
-use libtest_mimic::{run, Arguments, Trial};
+use libtest_mimic::{Arguments, Trial, run};
 use rust_life::EXAMPLES;
 
 fn main() {

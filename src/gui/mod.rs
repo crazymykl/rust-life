@@ -1,8 +1,11 @@
 use std::{cmp::max, num::ParseFloatError};
 
 use crate::board::Board;
-use ::image::ImageBuffer;
-use piston_window::*;
+use ::image::{ImageBuffer, Rgba};
+use ::piston_window::texture::{Format, UpdateTexture};
+use ::piston_window::*;
+use graphics::{Transformed, image};
+use wgpu_graphics::{Filter, Texture, TextureContext, TextureSettings};
 
 #[cfg(feature = "test_mainthread")]
 pub mod test_helper;
@@ -15,7 +18,7 @@ struct GameState {
     scale: f64,
     window: PistonWindow,
     cursor: [f64; 2],
-    texture_context: G2dTextureContext,
+    texture_context: TextureContext,
     texture: G2dTexture,
     running: bool,
     generation_limit: Option<usize>,
@@ -36,7 +39,6 @@ impl GameState {
             [brd.cols() as f64 * scale, brd.rows() as f64 * scale],
         )
         .exit_on_esc(true)
-        .graphics_api(OpenGL::V3_2)
         .build()
         .unwrap();
         window.set_ups(ups);
@@ -56,17 +58,32 @@ impl GameState {
         }
     }
 
-    fn make_texture(
-        texture_context: &mut G2dTextureContext,
-        cols: usize,
-        rows: usize,
-    ) -> G2dTexture {
+    fn make_texture(texture_context: &mut TextureContext, cols: usize, rows: usize) -> G2dTexture {
         Texture::from_image(
             texture_context,
             &ImageBuffer::new(cols as u32, rows as u32),
             &TextureSettings::new().mag(Filter::Nearest),
         )
         .unwrap()
+    }
+
+    fn update_texture(&mut self) {
+        let (rows, cols) = (self.brd.rows() as u32, self.brd.cols() as u32);
+        let cells = self
+            .brd
+            .iter()
+            .flat_map(|&val| if val { LIVE_COLOR } else { DEAD_COLOR })
+            .collect();
+
+        self.texture
+            .update(
+                &mut self.texture_context,
+                Format::Rgba8,
+                &ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(cols, rows, cells).unwrap(),
+                [0, 0],
+                [cols, rows],
+            )
+            .unwrap();
     }
 
     fn run(&mut self) {
@@ -98,22 +115,9 @@ impl GameState {
         }
 
         if e.render_args().is_some() {
-            let cells = self
-                .brd
-                .iter()
-                .flat_map(|&val| if val { LIVE_COLOR } else { DEAD_COLOR })
-                .collect();
-
-            self.texture
-                .update(
-                    &mut self.texture_context,
-                    &ImageBuffer::from_raw(self.brd.cols() as u32, self.brd.rows() as u32, cells)
-                        .unwrap(),
-                )
-                .unwrap();
-            self.window.draw_2d(&e, |c, g, d| {
+            self.update_texture();
+            self.window.draw_2d(&e, |c, g, _d| {
                 image(&self.texture, c.transform.scale(self.scale, self.scale), g);
-                self.texture_context.encoder.flush(d);
             });
         }
 

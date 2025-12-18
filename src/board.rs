@@ -1,4 +1,4 @@
-use rand::{distr::StandardUniform, rng, Rng};
+use rand::{Rng, distr::StandardUniform, rng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::cmp::max;
@@ -215,7 +215,7 @@ impl Board {
         self.resized_next_board(dst_cells, rows, cols)
     }
 
-    pub fn iter(&self) -> std::slice::Iter<bool> {
+    pub fn iter(&self) -> std::slice::Iter<'_, bool> {
         self.board.iter()
     }
 }

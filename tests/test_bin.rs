@@ -1,8 +1,8 @@
-use assert_cmd::Command;
+use assert_cmd::{Command, cargo};
 use rust_life::CLEAR;
 
 fn bin() -> Command {
-    Command::cargo_bin("rust-life").unwrap()
+    Command::new(cargo::cargo_bin!("rust-life"))
 }
 
 #[test]
