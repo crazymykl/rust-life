@@ -1,0 +1,10 @@
+name: Linux-specific deps
+description: Install Linux-specific dependencies
+
+runs:
+  using: composite
+  steps:
+    - run: |
+        sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+          libxkbcommon-x11-0 xvfb libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+      shell: bash
