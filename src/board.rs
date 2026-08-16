@@ -1,4 +1,4 @@
-use rand::{Rng, distr::StandardUniform, rng};
+use rand::{RngExt, distr::StandardUniform, rng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::cmp::max;
