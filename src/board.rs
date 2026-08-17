@@ -8,6 +8,8 @@ use std::iter::{repeat, repeat_n};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::life::LifeBoard;
+
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
 
@@ -271,6 +273,54 @@ impl FromStr for Board {
             .collect();
 
         brd.map(|board| Board::new(row_cnt, col_cnt).next_board(board))
+    }
+}
+
+impl LifeBoard for Board {
+    fn new(rows: usize, cols: usize) -> Self {
+        Board::new(rows, cols)
+    }
+
+    fn rows(&self) -> usize {
+        self.rows()
+    }
+
+    fn cols(&self) -> usize {
+        self.cols()
+    }
+
+    fn generation(&self) -> usize {
+        self.generation()
+    }
+
+    fn population(&self) -> usize {
+        self.population()
+    }
+
+    fn next_generation(&self) -> Self {
+        Board::next_generation(self)
+    }
+
+    fn toggle(&self, x: usize, y: usize) -> Self {
+        Board::toggle(self, x, y)
+    }
+
+    fn clear(&self) -> Self {
+        Board::clear(self)
+    }
+
+    fn random(&self) -> Self {
+        Board::random(self)
+    }
+
+    fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self {
+        Board::pad(self, top, right, bottom, left)
+    }
+
+    fn for_each_cell(&self, mut f: impl FnMut(bool)) {
+        for &cell in &self.board {
+            f(cell);
+        }
     }
 }
 
