@@ -24,6 +24,13 @@ pub trait LifeBoard: Display + FromStr + Eq {
     /// Advance one generation, returning the result (may allocate).
     fn next_generation(&self) -> Self;
 
+    /// Advance one generation in place. The default allocates via
+    /// `next_generation`; `BitBoard` overrides it with the double-buffered,
+    /// allocation-free path.
+    fn step(&mut self) {
+        *self = self.next_generation();
+    }
+
     /// Flip a single cell. A no-op if the coordinate is out of bounds.
     fn toggle(&self, x: usize, y: usize) -> Self;
 

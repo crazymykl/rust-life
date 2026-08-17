@@ -17,8 +17,6 @@
 //! A `std::simd` variant (`step_simd`) runs the same formula on two adjacent
 //! words at once with `u64x2`. It is gated behind the `unstable` feature.
 
-#![allow(dead_code)]
-
 #[cfg(all(feature = "unstable", test))]
 use core::simd::prelude::*;
 
@@ -74,7 +72,7 @@ impl BitBoard {
             }
         }
 
-        let words_per_row = (cols + BITS - 1) / BITS;
+        let words_per_row = cols.div_ceil(BITS);
         let words = vec![0u64; rows * words_per_row];
         BitBoard {
             current: words.clone(),
@@ -448,6 +446,11 @@ impl LifeBoard for BitBoard {
 
     fn next_generation(&self) -> Self {
         BitBoard::next_generation(self)
+    }
+
+    /// The double-buffered, allocation-free fast path.
+    fn step(&mut self) {
+        BitBoard::step(self);
     }
 
     fn toggle(&self, x: usize, y: usize) -> Self {
