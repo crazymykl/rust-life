@@ -1,8 +1,6 @@
-use crate::Board;
 #[cfg(feature = "gui")]
 use crate::gui;
 use clap::{Parser, ValueEnum};
-use std::str::FromStr;
 
 #[derive(ValueEnum, Copy, Clone, Debug)]
 #[rustfmt::skip]
@@ -24,8 +22,8 @@ pub(crate) struct Args {
     pub(crate) rows: usize,
 
     /// A board template string
-    #[arg(short, long, value_parser = Board::from_str)]
-    pub(crate) template: Option<Board>,
+    #[arg(short, long)]
+    pub(crate) template: Option<String>,
 
     /// Alignment of the template within the world
     #[arg(short, long, value_enum, default_value_t = Alignment::Center)]

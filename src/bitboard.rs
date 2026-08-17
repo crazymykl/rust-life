@@ -17,12 +17,14 @@
 //! A `std::simd` variant (`step_simd`) runs the same formula on two adjacent
 //! words at once with `u64x2`. It is gated behind the `unstable` feature.
 
+#![allow(dead_code)]
+
 #[cfg(all(feature = "unstable", test))]
 use core::simd::prelude::*;
 
-#[cfg(test)]
 use crate::board::Board;
-#[cfg(test)]
+use crate::life::LifeBoard;
+use std::fmt::{self, Write};
 use std::str::FromStr;
 
 const BITS: usize = 64;
@@ -379,9 +381,120 @@ impl BitBoard {
     }
 }
 
+impl fmt::Display for BitBoard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let wp = self.words_per_row;
+        for r in 0..self.rows {
+            for c in 0..self.cols {
+                let idx = r * wp + c / BITS;
+                let live = (self.current[idx] >> (c % BITS)) & 1 == 1;
+                f.write_char(if live { '@' } else { '.' })?;
+            }
+            if r + 1 < self.rows {
+                f.write_char('\n')?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for BitBoard {
+    type Err = crate::board::ParseBoardErr;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let board = Board::from_str(s)?;
+        Ok(Self::from(&board))
+    }
+}
+
+/// Re-pack a `BitBoard` into a `Vec<bool>` `Board` by rendering and re-parsing.
+/// Used by the bit-packed `pad`, which re-packs words when the width changes.
+impl From<&BitBoard> for Board {
+    fn from(bits: &BitBoard) -> Board {
+        Board::from_str(&format!("{bits}")).expect("BitBoard renders to valid board text")
+    }
+}
+
+impl PartialEq for BitBoard {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation
+            && self.rows == other.rows
+            && self.cols == other.cols
+            && self.current == other.current
+    }
+}
+
+impl Eq for BitBoard {}
+
+impl LifeBoard for BitBoard {
+    fn new(rows: usize, cols: usize) -> Self {
+        BitBoard::new(rows, cols)
+    }
+
+    fn rows(&self) -> usize {
+        self.rows()
+    }
+
+    fn cols(&self) -> usize {
+        self.cols()
+    }
+
+    fn generation(&self) -> usize {
+        self.generation()
+    }
+
+    fn population(&self) -> usize {
+        self.population()
+    }
+
+    fn next_generation(&self) -> Self {
+        BitBoard::next_generation(self)
+    }
+
+    fn toggle(&self, x: usize, y: usize) -> Self {
+        let mut b = self.clone();
+        if x < self.rows && y < self.cols {
+            b.current[x * self.words_per_row + y / BITS] ^= 1u64 << (y % BITS);
+        }
+        b
+    }
+
+    fn clear(&self) -> Self {
+        BitBoard::new(self.rows, self.cols)
+    }
+
+    fn random(&self) -> Self {
+        BitBoard::random(self)
+    }
+
+    fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self {
+        let board: Board = self.into();
+        let padded = board.pad(top, right, bottom, left);
+        let mut bits = BitBoard::from(&padded);
+        bits.generation = self.generation;
+        bits
+    }
+
+    fn for_each_cell(&self, mut f: impl FnMut(bool)) {
+        let wp = self.words_per_row;
+        for r in 0..self.rows {
+            let base = r * wp;
+            for w in 0..wp {
+                let word = self.current[base + w];
+                // The final word of a row may hold fewer than 64 valid cells.
+                let valid = if w == wp - 1 { self.cols % BITS } else { BITS };
+                let nbits = if valid == 0 { BITS } else { valid };
+                let mut i = 0;
+                while i < nbits {
+                    f((word >> i) & 1 == 1);
+                    i += 1;
+                }
+            }
+        }
+    }
+}
+
 /// Build a `BitBoard` from a `Vec<bool>` `Board`'s cell stream, so the two
 /// representations can be compared generation-for-generation.
-#[cfg(test)]
 impl From<&Board> for BitBoard {
     fn from(board: &Board) -> BitBoard {
         let mut bits = BitBoard::new(board.rows(), board.cols());
@@ -400,21 +513,7 @@ impl From<&Board> for BitBoard {
 /// can be compared string-for-string.
 #[cfg(test)]
 pub fn bitboard_to_str(bits: &BitBoard) -> String {
-    let mut out = String::new();
-    for r in 0..bits.rows() {
-        for c in 0..bits.cols() {
-            let idx = r * bits.words_per_row + c / BITS;
-            out.push(if bits.current[idx] >> (c % BITS) & 1 == 1 {
-                '@'
-            } else {
-                '.'
-            });
-        }
-        if r + 1 < bits.rows() {
-            out.push('\n');
-        }
-    }
-    out
+    format!("{bits}")
 }
 
 #[cfg(test)]
@@ -498,6 +597,46 @@ mod tests {
         // ~50% on average, allow a wide band for the random case.
         let pop = bits.population();
         assert!(pop > 64 * 64 / 2 - 100 && pop < 64 * 64 / 2 + 100);
+    }
+
+    #[test]
+    fn test_lifeboard_methods_match_board() {
+        use crate::life::LifeBoard;
+        // 70 cols spans two words with a partial last word, so it exercises
+        // the padding handling in the bit-packed paths.
+        let board = Board::new(50, 70).random();
+        let bits = BitBoard::from(&board);
+
+        // toggle a cell; an out-of-bounds toggle is a no-op
+        assert_eq!(
+            board.toggle(3, 5).to_string(),
+            bitboard_to_str(&bits.toggle(3, 5))
+        );
+        assert_eq!(
+            bitboard_to_str(&bits),
+            bitboard_to_str(&bits.toggle(999, 999))
+        );
+
+        // clear
+        assert_eq!(board.clear().population(), bits.clear().population());
+        assert_eq!(board.clear().to_string(), bitboard_to_str(&bits.clear()));
+
+        // random keeps the dimensions
+        let r = bits.random();
+        assert_eq!((r.rows(), r.cols()), (bits.rows(), bits.cols()));
+
+        // pad re-packs the words (exercises the render/re-parse round-trip)
+        let p_b = board.pad(2, 3, 1, 1);
+        let p_t = bits.pad(2, 3, 1, 1);
+        assert_eq!((p_b.rows(), p_b.cols()), (p_t.rows(), p_t.cols()));
+        assert_eq!(p_b.to_string(), bitboard_to_str(&p_t));
+
+        // for_each_cell yields the same row-major stream as iter()
+        let mut bcells: Vec<bool> = Vec::new();
+        board.for_each_cell(|c| bcells.push(c));
+        let mut tcells: Vec<bool> = Vec::new();
+        bits.for_each_cell(|c| tcells.push(c));
+        assert_eq!(bcells, tcells);
     }
 
     #[cfg(feature = "unstable")]

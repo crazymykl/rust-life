@@ -1,6 +1,6 @@
 use std::{cmp::max, num::ParseFloatError};
 
-use crate::board::Board;
+use crate::life::LifeBoard;
 use ::image::{ImageBuffer, Rgba};
 use ::piston_window::texture::{Format, UpdateTexture};
 use ::piston_window::*;
@@ -13,8 +13,8 @@ pub mod test_helper;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
-struct GameState {
-    brd: Board,
+struct GameState<B: LifeBoard> {
+    brd: B,
     scale: f64,
     window: PistonWindow,
     cursor: [f64; 2],
@@ -25,9 +25,9 @@ struct GameState {
     exit_on_finish: bool,
 }
 
-impl GameState {
+impl<B: LifeBoard> GameState<B> {
     fn new(
-        brd: Board,
+        brd: B,
         scale: f64,
         ups: u64,
         running: bool,
@@ -69,11 +69,10 @@ impl GameState {
 
     fn update_texture(&mut self) {
         let (rows, cols) = (self.brd.rows() as u32, self.brd.cols() as u32);
-        let cells = self
-            .brd
-            .iter()
-            .flat_map(|&val| if val { LIVE_COLOR } else { DEAD_COLOR })
-            .collect();
+        let mut cells = Vec::with_capacity(rows as usize * cols as usize * 4);
+        self.brd.for_each_cell(|live| {
+            cells.extend(if live { LIVE_COLOR } else { DEAD_COLOR });
+        });
 
         self.texture
             .update(
@@ -160,8 +159,8 @@ impl GameState {
     }
 }
 
-pub fn run(
-    brd: Board,
+pub fn run<B: LifeBoard>(
+    brd: B,
     scale: f64,
     ups: u64,
     init_running: bool,

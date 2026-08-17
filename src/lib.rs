@@ -4,8 +4,8 @@
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
 
-#[cfg(test)]
 mod bitboard;
+mod life;
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -15,6 +15,8 @@ mod board;
 
 use args::{Alignment, Args, parse_args};
 use board::Board;
+use life::LifeBoard;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 #[cfg(all(feature = "test_mainthread", feature = "gui"))]
@@ -25,7 +27,13 @@ pub const CLEAR: &str = "\x1b[H\x1b[2J";
 pub fn run() {
     let args = parse_args();
     let cli_run_gens = args.generation_limit.or(args.generations.and(Some(0)));
-    let brd = make_board(&args);
+    let brd = match make_board::<Board>(&args) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
 
     #[cfg(feature = "gui")]
     if args.no_gui {
@@ -44,8 +52,9 @@ pub fn run() {
     cli(brd, args.ups, cli_run_gens);
 }
 
-fn make_board(args: &Args) -> Board {
+fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> Result<B, String> {
     let mut brd = if let Some(template) = &args.template {
+        let template = B::from_str(template).map_err(|e| e.to_string())?;
         let (top, right, bottom, left) = if let Some(padding) = &args.padding {
             parse_padding(padding)
         } else {
@@ -57,14 +66,14 @@ fn make_board(args: &Args) -> Board {
 
         template.pad(top, right, bottom, left)
     } else {
-        Board::new(args.rows, args.cols).random()
+        B::new(args.rows, args.cols).random()
     };
 
     for _ in 0..args.generations.unwrap_or(0) {
         brd = brd.next_generation();
     }
 
-    brd
+    Ok(brd)
 }
 
 fn parse_padding(padding: &[isize]) -> (isize, isize, isize, isize) {
@@ -102,7 +111,7 @@ fn alignment_padding(
     (top, right, bottom, left)
 }
 
-fn cli(mut brd: Board, ups: u64, run_gens: Option<usize>) {
+fn cli<B: LifeBoard>(mut brd: B, ups: u64, run_gens: Option<usize>) {
     if run_gens == Some(0) {
         println!("{brd}");
     } else {

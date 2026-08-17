@@ -28,7 +28,7 @@ pub const EXAMPLES: &[Example] = &test_examples![
     test_resize_event,
 ];
 
-fn make_gamestate(brd: Board) -> GameState {
+fn make_gamestate(brd: Board) -> GameState<Board> {
     GameState::new(brd, 4.0, 1, true, Some(1), false)
 }
 
@@ -140,7 +140,7 @@ fn test_toggle_running_event() {
 }
 
 fn test_update_event() {
-    let mut gs: GameState = make_gamestate(Board::new(3, 3));
+    let mut gs: GameState<Board> = make_gamestate(Board::new(3, 3));
 
     gs.handle_event(update_event());
 
@@ -154,7 +154,7 @@ fn test_update_event() {
 }
 
 fn test_resize_event() {
-    let mut gs: GameState = make_gamestate(Board::new(3, 3));
+    let mut gs: GameState<Board> = make_gamestate(Board::new(3, 3));
 
     assert_eq!(gs.brd.len(), 9);
 
