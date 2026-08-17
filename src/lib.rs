@@ -13,7 +13,8 @@ mod gui;
 mod args;
 mod board;
 
-use args::{Alignment, Args, parse_args};
+use args::{Alignment, Args, Backend, parse_args};
+use bitboard::BitBoard;
 use board::Board;
 use life::LifeBoard;
 use std::str::FromStr;
@@ -27,14 +28,16 @@ pub const CLEAR: &str = "\x1b[H\x1b[2J";
 pub fn run() {
     let args = parse_args();
     let cli_run_gens = args.generation_limit.or(args.generations.and(Some(0)));
-    let brd = match make_board::<Board>(&args) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    };
+    // The backend flag selects the concrete board type; the rest of the
+    // program is generic over `B`, so there's no runtime indirection.
+    match args.backend {
+        Backend::Board => run_with(&args, make_concrete::<Board>(&args), cli_run_gens),
+        Backend::BitBoard => run_with(&args, make_concrete::<BitBoard>(&args), cli_run_gens),
+    }
+}
 
+/// Drives the GUI or CLI for the selected backend.
+fn run_with<B: LifeBoard>(args: &Args, brd: B, cli_run_gens: Option<usize>) {
     #[cfg(feature = "gui")]
     if args.no_gui {
         cli(brd, args.ups, cli_run_gens);
@@ -52,9 +55,15 @@ pub fn run() {
     cli(brd, args.ups, cli_run_gens);
 }
 
-fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> Result<B, String> {
+fn make_concrete<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> B {
     let mut brd = if let Some(template) = &args.template {
-        let template = B::from_str(template).map_err(|e| e.to_string())?;
+        let template = match B::from_str(template) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        };
         let (top, right, bottom, left) = if let Some(padding) = &args.padding {
             parse_padding(padding)
         } else {
@@ -73,7 +82,7 @@ fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> Re
         brd = brd.next_generation();
     }
 
-    Ok(brd)
+    brd
 }
 
 fn parse_padding(padding: &[isize]) -> (isize, isize, isize, isize) {
@@ -121,7 +130,7 @@ fn cli<B: LifeBoard>(mut brd: B, ups: u64, run_gens: Option<usize>) {
         while run_gens.is_none() || Some(brd.generation()) <= run_gens {
             frame_start = Instant::now();
             println!("{CLEAR}{brd}");
-            brd = brd.next_generation();
+            brd.step();
             std::thread::sleep(
                 frame_time.saturating_sub(Instant::now().duration_since(frame_start)),
             );
@@ -169,4 +178,23 @@ fn test_alignment_padding() {
         alignment_padding(Alignment::BottomRight, 2, 2),
         (2, 0, 0, 2)
     );
+}
+
+#[cfg(test)]
+mod backend_tests {
+    use super::*;
+
+    #[test]
+    fn backends_agree() {
+        // The two backends, started from the same template, must evolve
+        // identically through the shared `LifeBoard` interface.
+        let template = ".@.\n..@\n@@."; // a glider
+        let mut board: Board = Board::from_str(template).unwrap();
+        let mut bits: BitBoard = BitBoard::from_str(template).unwrap();
+        for _ in 0..5 {
+            board.step();
+            bits.step();
+        }
+        assert_eq!(format!("{board}"), format!("{bits}"));
+    }
 }

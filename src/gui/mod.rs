@@ -108,7 +108,7 @@ impl<B: LifeBoard> GameState<B> {
                 Button::Keyboard(Key::C) => self.brd = self.brd.clear(),
                 Button::Keyboard(Key::Q) => self.window.set_should_close(true),
                 Button::Keyboard(Key::R) => self.brd = self.brd.random(),
-                Button::Keyboard(Key::S) => self.brd = self.brd.next_generation(),
+                Button::Keyboard(Key::S) => self.brd.step(),
                 _ => {}
             };
         }
@@ -128,7 +128,7 @@ impl<B: LifeBoard> GameState<B> {
                     self.running = false;
                 }
             } else {
-                self.brd = self.brd.next_generation();
+                self.brd.step();
             }
         }
 

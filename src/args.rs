@@ -10,6 +10,26 @@ pub enum Alignment {
     BottomLeft, Bottom, BottomRight,
 }
 
+#[derive(ValueEnum, Copy, Clone, Debug)]
+pub enum Backend {
+    /// The `Vec<bool>` board (rayon-parallel).
+    #[value(name = "board")]
+    Board,
+
+    /// The bit-packed `Vec<u64>` board (word-level, allocation-free).
+    #[value(name = "bitboard")]
+    BitBoard,
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::Board => write!(f, "board"),
+            Backend::BitBoard => write!(f, "bitboard"),
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub(crate) struct Args {
@@ -64,6 +84,10 @@ pub(crate) struct Args {
     /// Updates per second (target)
     #[arg(short, long, default_value_t = 120)]
     pub(crate) ups: u64,
+
+    /// Board representation to simulate
+    #[arg(short, long, default_value_t = Backend::Board)]
+    pub(crate) backend: Backend,
 }
 
 pub(crate) fn parse_args() -> Args {
