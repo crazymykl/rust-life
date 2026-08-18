@@ -329,7 +329,7 @@ impl LifeBoard for Board {
 
 #[cfg(test)]
 #[rustfmt::skip]
-const TEST_BOARDS: [&'static str; 9] = [
+const TEST_BOARDS: [&str; 9] = [
     ".@.\n.@@\n.@@",
     "...\n@@@\n...",
     ".@.\n.@.\n.@.",

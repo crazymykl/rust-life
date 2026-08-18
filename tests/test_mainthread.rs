@@ -16,7 +16,7 @@ fn main() {
     run(
         &args,
         EXAMPLES
-            .into_iter()
+            .iter()
             .map(|(name, func)| {
                 Trial::test(*name, move || {
                     catch_unwind(func).map_err(|x| format!("{x:?}").into())

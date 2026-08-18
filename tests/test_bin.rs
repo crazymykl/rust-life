@@ -13,7 +13,7 @@ fn test_help() {
 #[test]
 fn test_cli() {
     bin()
-        .args(&[
+        .args([
             #[cfg(feature = "gui")]
             "--no-gui",
             "-g0",
@@ -137,7 +137,7 @@ fn test_cli_generations() {
 fn test_cli_rules() {
     // A valid custom rule is accepted and runs (Day & Night on a blank 3x3).
     bin()
-        .args(&[
+        .args([
             #[cfg(feature = "gui")]
             "--no-gui",
             "-g0",
@@ -153,7 +153,7 @@ fn test_cli_rules() {
 
     // An out-of-range neighbor count is rejected at parse time.
     bin()
-        .args(&[
+        .args([
             #[cfg(feature = "gui")]
             "--no-gui",
             "-g0",
