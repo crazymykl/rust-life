@@ -165,6 +165,41 @@ fn test_cli_rules() {
 }
 
 #[test]
+fn test_cli_backend_bitboard() {
+    // The bit-packed backend must evolve identically to the default `Board`.
+    bin()
+        .args([
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "--backend",
+            "bitboard",
+            "-g1",
+            "-t",
+            "...\n@@@\n...",
+            "-p0",
+        ])
+        .assert()
+        .stdout(".@.\n.@.\n.@.\n")
+        .success();
+}
+
+#[test]
+fn test_cli_bad_template() {
+    // A template with an invalid character is rejected at parse time and the
+    // process exits non-zero.
+    bin()
+        .args([
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "-g0",
+            "-t",
+            "X",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
 #[cfg(feature = "gui")]
 fn test_gui_scale() {
     bin().args(["-s0"]).assert().failure();

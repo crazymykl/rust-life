@@ -672,6 +672,62 @@ mod tests {
     }
 
     #[test]
+    fn test_len_and_is_empty() {
+        let b = BitBoard::new(3, 4);
+        assert_eq!(b.len(), 12);
+        assert!(!b.is_empty());
+        assert!(BitBoard::new(0, 0).is_empty());
+    }
+
+    #[test]
+    fn test_next_generation() {
+        // A glider: advancing via the (value-returning) path must match the
+        // reference board, generation counter included.
+        let (board, bits) = from_text(".@.\n..@\n@@.");
+        let next = bits.next_generation();
+        assert_eq!(next.generation(), 1);
+        assert_eq!(board.next_generation().population(), next.population());
+    }
+
+    #[test]
+    fn test_partial_eq() {
+        let a = BitBoard::new(3, 3);
+        assert_eq!(a, BitBoard::new(3, 3));
+        assert_ne!(a, BitBoard::new(3, 4)); // different shape
+        let mut c = a.clone();
+        c.step();
+        assert_ne!(a, c); // different generation / cells
+    }
+
+    #[test]
+    fn test_for_each_cell_word_boundary() {
+        // A width that is an exact multiple of 64 exercises the `valid == 0`
+        // branch of `for_each_cell` (nbits falls back to a full word).
+        let bits = BitBoard::new(3, 64).random();
+        let mut n = 0usize;
+        bits.for_each_cell(|c| {
+            if c {
+                n += 1;
+            }
+        });
+        assert_eq!(n, bits.population());
+    }
+
+    #[test]
+    fn test_every_count_general_path() {
+        // A rule that births and survives on every neighbor count exercises all
+        // branches of the general per-count path, including the count-8 fold.
+        let rule = Rules::from_str("B012345678/S012345678").unwrap();
+        let mut board = Board::new(17, 17).with_rules(&rule).random();
+        let mut bits = BitBoard::from(&board).with_rules(&rule);
+        for _ in 0..3 {
+            assert_eq!(board.to_string(), crate::bitboard::bitboard_to_str(&bits));
+            board = board.next_generation();
+            bits.step();
+        }
+    }
+
+    #[test]
     fn test_custom_rule_matches_board() {
         // A non-Conway rule must give the same generations on both backends,
         // exercising BitBoard's general per-count path against the reference.
@@ -693,6 +749,49 @@ mod tests {
                 bits.step();
             }
         }
+    }
+
+    #[test]
+    fn test_from_str_error() {
+        // A malformed template and a row-length mismatch must both propagate
+        // the parse error through `FromStr` (covers the `?` on `from_str`).
+        assert!(BitBoard::from_str("X").is_err());
+        assert!(BitBoard::from_str("@@\n@").is_err());
+    }
+
+    #[test]
+    fn test_display_fails_on_char_write() {
+        // A writer whose `write_str` always errors makes `Display::fmt`'s
+        // `?` propagate on the first character write (covers the char `?`).
+        struct AlwaysFail;
+        impl Write for AlwaysFail {
+            fn write_str(&mut self, _: &str) -> fmt::Result {
+                Err(fmt::Error)
+            }
+        }
+        let mut w = AlwaysFail;
+        let bits = BitBoard::new(3, 3);
+        assert!(write!(w, "{bits}").is_err());
+    }
+
+    #[test]
+    fn test_display_fails_on_newline_write() {
+        // A writer that tolerates characters but rejects a newline makes the
+        // newline `?` propagate. A multi-row board is needed so a newline is
+        // emitted between rows.
+        struct FailOnNewline;
+        impl Write for FailOnNewline {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                if s.contains('\n') {
+                    Err(fmt::Error)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let mut w = FailOnNewline;
+        let bits = BitBoard::new(3, 3);
+        assert!(write!(w, "{bits}").is_err());
     }
 
     #[cfg(feature = "unstable")]
