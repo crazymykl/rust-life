@@ -207,6 +207,6 @@ fn test_valid_scale() {
     );
     assert_eq!(
         valid_scale("puppies"),
-        Err(format!("invalid float literal"))
+        Err("invalid float literal".to_string())
     );
 }
