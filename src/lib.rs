@@ -210,6 +210,7 @@ mod backend_tests {
         // Both backends must also agree under a non-Conway rule, exercising
         // BitBoard's general per-count path against the reference Board.
         let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
+
         let mut board = Board::new(40, 40).with_rules(&rule).random();
         let mut bits = BitBoard::from(&board).with_rules(&rule);
         for _ in 0..6 {
@@ -221,5 +222,44 @@ mod backend_tests {
             board.step();
             bits.step();
         }
+    }
+
+    /// Drive every `LifeBoard` method through the trait surface. Inherent
+    /// methods shadow the trait for concrete types, so the calls are fully
+    /// qualified to reach each backend's trait impl.
+    fn exercise<B: LifeBoard + Clone>(b: B) {
+        let _ = <B as LifeBoard>::new(4, 4);
+        let _ = <B as LifeBoard>::rows(&b);
+        let _ = <B as LifeBoard>::cols(&b);
+        let _ = <B as LifeBoard>::generation(&b);
+        let _ = <B as LifeBoard>::population(&b);
+        let _ = <B as LifeBoard>::next_generation(&b);
+        let mut stepped = b.clone();
+        <B as LifeBoard>::step(&mut stepped);
+        let _ = <B as LifeBoard>::toggle(&b, 1, 1);
+        let _ = <B as LifeBoard>::toggle(&b, 99, 99); // out-of-bounds no-op
+        let _ = <B as LifeBoard>::clear(&b);
+        let _ = <B as LifeBoard>::random(&b);
+        let _ = <B as LifeBoard>::with_rules(&b, &Rules::conway());
+        let _ = <B as LifeBoard>::pad(&b, 1, 1, 1, 1);
+        // Visit cells of a board with a live cell, so the closure body runs.
+        let one_live = <B as LifeBoard>::toggle(&b, 0, 0);
+        let mut live = 0usize;
+        <B as LifeBoard>::for_each_cell(&one_live, |c| {
+            if c {
+                live += 1;
+            }
+        });
+        let _ = live;
+    }
+
+    #[test]
+    fn board_via_trait() {
+        exercise(Board::new(4, 4));
+    }
+
+    #[test]
+    fn bitboard_via_trait() {
+        exercise(BitBoard::new(4, 4));
     }
 }

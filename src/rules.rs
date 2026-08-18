@@ -83,13 +83,10 @@ impl FromStr for Rules {
     fn from_str(input: &str) -> Result<Self, ParseRulesErr> {
         let mut rules = Rules::empty();
         for (i, part) in input.split('/').enumerate() {
-            if i > 1 {
-                return Err(ParseRulesErr("at most one '/' separator is allowed".into()));
-            }
             let mask = match i {
                 0 => &mut rules.born,
                 1 => &mut rules.survive,
-                _ => unreachable!(),
+                _ => return Err(ParseRulesErr("at most one '/' separator is allowed".into())),
             };
             parse_set(part, mask)?;
         }
@@ -173,5 +170,11 @@ mod tests {
         assert!(Rules::from_str("B9/S23").is_err());
         assert!(Rules::from_str("B3/Sx").is_err());
         assert!(Rules::from_str("B3/S23/extra").is_err());
+    }
+
+    #[test]
+    fn default_is_conway() {
+        assert_eq!(Rules::default(), Rules::conway());
+        assert_ne!(Rules::default(), Rules::empty());
     }
 }

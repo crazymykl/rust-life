@@ -100,3 +100,14 @@ pub(crate) struct Args {
 pub(crate) fn parse_args() -> Args {
     Args::parse()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_display() {
+        assert_eq!(Backend::Board.to_string(), "board");
+        assert_eq!(Backend::BitBoard.to_string(), "bitboard");
+    }
+}
