@@ -57,16 +57,6 @@ impl Rules {
     pub fn survives_on(&self, n: usize) -> bool {
         self.survive & (1 << n) != 0
     }
-
-    /// The birth counts as a list, for the `Vec`-based `Board`.
-    pub fn born_list(&self) -> Vec<usize> {
-        (0..9).filter(|&n| self.born_on(n)).collect()
-    }
-
-    /// The survival counts as a list, for the `Vec`-based `Board`.
-    pub fn survive_list(&self) -> Vec<usize> {
-        (0..9).filter(|&n| self.survives_on(n)).collect()
-    }
 }
 
 impl Default for Rules {

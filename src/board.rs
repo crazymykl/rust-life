@@ -6,7 +6,6 @@ use std::error::Error;
 use std::fmt;
 use std::iter::{repeat, repeat_n};
 use std::str::FromStr;
-use std::sync::Arc;
 
 use crate::Rules;
 use crate::life::LifeBoard;
@@ -17,8 +16,7 @@ const DEAD_CELL: char = '.';
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Board {
     board: Vec<bool>,
-    survive: Arc<Vec<usize>>,
-    born: Arc<Vec<usize>>,
+    rules: Rules,
     rows: usize,
     cols: usize,
     generation: usize,
@@ -26,24 +24,15 @@ pub struct Board {
 
 impl Board {
     pub fn new(rows: usize, cols: usize) -> Board {
-        let born = vec![3];
-        let survive = vec![2, 3];
-
-        Board::new_with_custom_rules(rows, cols, born, survive)
+        Board::new_with_rules(rows, cols, &Rules::conway())
     }
 
-    fn new_with_custom_rules(
-        rows: usize,
-        cols: usize,
-        born: Vec<usize>,
-        survive: Vec<usize>,
-    ) -> Board {
+    fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> Board {
         let new_board = repeat_n(false, rows * cols).collect();
 
         Board {
             board: new_board,
-            born: Arc::new(born),
-            survive: Arc::new(survive),
+            rules: *rules,
             rows,
             cols,
             generation: 0,
@@ -83,8 +72,7 @@ impl Board {
 
         Board {
             board: new_board,
-            born: Arc::clone(&self.born),
-            survive: Arc::clone(&self.survive),
+            rules: self.rules,
             rows,
             cols,
             generation: self.generation,
@@ -161,9 +149,9 @@ impl Board {
     fn successor(&self, x: usize, y: usize) -> bool {
         let neighbors = self.living_neighbors(x, y);
         if self.cell_live(x, y) {
-            self.survive.contains(&neighbors)
+            self.rules.survives_on(neighbors)
         } else {
-            self.born.contains(&neighbors)
+            self.rules.born_on(neighbors)
         }
     }
 
@@ -181,8 +169,7 @@ impl Board {
         let new_board = repeat_n(false, self.rows * self.cols).collect();
         Board {
             board: new_board,
-            born: Arc::clone(&self.born),
-            survive: Arc::clone(&self.survive),
+            rules: self.rules,
             rows: self.rows,
             cols: self.cols,
             generation: 0,
@@ -307,10 +294,10 @@ impl LifeBoard for Board {
     }
 
     fn with_rules(&self, rules: &Rules) -> Self {
-        let mut b = self.clone();
-        b.born = Arc::new(rules.born_list());
-        b.survive = Arc::new(rules.survive_list());
-        b
+        Board {
+            rules: *rules,
+            ..self.clone()
+        }
     }
 
     fn next_generation(&self) -> Self {
