@@ -44,9 +44,11 @@ pub trait LifeBoard: Display + FromStr + Eq {
     fn with_rules(&self, rules: &Rules) -> Self;
 
     /// Flip a single cell. A no-op if the coordinate is out of bounds.
+    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
     fn toggle(&self, x: usize, y: usize) -> Self;
 
     /// An all-dead board of the same size.
+    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
     fn clear(&self) -> Self;
 
     /// A random board of the same size.
