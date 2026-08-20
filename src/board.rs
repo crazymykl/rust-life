@@ -123,6 +123,7 @@ impl Board {
     }
 
     #[cfg(not(feature = "rayon"))]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn parallel_next_generation(&self) -> Board {
         unimplemented!("Need 'rayon' feature for parallelism")
     }
@@ -155,6 +156,7 @@ impl Board {
         }
     }
 
+    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
     pub fn toggle(&self, x: usize, y: usize) -> Board {
         if x < self.rows && y < self.cols {
             let mut board = self.board.clone();
@@ -165,6 +167,7 @@ impl Board {
         }
     }
 
+    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
     pub fn clear(&self) -> Board {
         let new_board = repeat_n(false, self.rows * self.cols).collect();
         Board {
