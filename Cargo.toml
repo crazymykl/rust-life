@@ -22,6 +22,9 @@ harness = false
 path = "tests/test_mainthread.rs"
 required-features = ["test_mainthread", "gui"]
 
+[[bench]]
+
+name = "e2e"
 
 [dependencies]
 
