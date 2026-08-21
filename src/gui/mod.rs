@@ -1,6 +1,6 @@
 use std::{cmp::max, num::ParseFloatError};
 
-use crate::life::LifeBoard;
+use crate::lifeboard::LifeBoard;
 use ::image::{ImageBuffer, Rgba};
 use ::piston_window::texture::{Format, UpdateTexture};
 use ::piston_window::*;

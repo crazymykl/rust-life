@@ -2,12 +2,10 @@ extern crate test;
 
 use self::test::Bencher;
 use crate::Rules;
-use crate::bitboard::BitBoard;
+use crate::bitboard::ScalarBitBoard;
+#[cfg(feature = "unstable")]
+use crate::bitboard::SimdBitBoard;
 use crate::board::Board;
-#[cfg(feature = "unstable")]
-use crate::life::LifeBoard;
-#[cfg(feature = "unstable")]
-use crate::simd_board::SimdBoard;
 use std::str::FromStr;
 
 #[bench]
@@ -41,7 +39,7 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
 
 #[bench]
 fn bench_bitboard_ten_generations(b: &mut Bencher) {
-    let mut brd = BitBoard::new(200, 200).random();
+    let mut brd = ScalarBitBoard::new(200, 200).random();
 
     b.iter(|| {
         for _ in 0..10 {
@@ -52,7 +50,7 @@ fn bench_bitboard_ten_generations(b: &mut Bencher) {
 
 #[bench]
 fn bench_bitboard_large_ten_generations(b: &mut Bencher) {
-    let mut brd = BitBoard::new(1000, 1000).random();
+    let mut brd = ScalarBitBoard::new(1000, 1000).random();
 
     b.iter(|| {
         for _ in 0..10 {
@@ -77,7 +75,7 @@ fn bench_vecbool_large_ten_generations(b: &mut Bencher) {
 /// The dedicated B3/S23 fast path (`bit1 & !c02 & (bit0 | center)`).
 #[bench]
 fn bench_bitboard_step(b: &mut Bencher) {
-    let mut brd = BitBoard::new(1000, 1000).random();
+    let mut brd = ScalarBitBoard::new(1000, 1000).random();
 
     b.iter(|| {
         for _ in 0..10 {
@@ -91,7 +89,7 @@ fn bench_bitboard_step(b: &mut Bencher) {
 #[bench]
 fn bench_bitboard_step_general(b: &mut Bencher) {
     let mut brd =
-        BitBoard::new_with_rules(1000, 1000, &Rules::from_str("B368/S245").unwrap()).random();
+        ScalarBitBoard::new_with_rules(1000, 1000, &Rules::from_str("B368/S245").unwrap()).random();
 
     b.iter(|| {
         for _ in 0..10 {
@@ -103,7 +101,7 @@ fn bench_bitboard_step_general(b: &mut Bencher) {
 #[cfg(feature = "unstable")]
 #[bench]
 fn bench_bitboard_simd(b: &mut Bencher) {
-    let mut simd = SimdBoard::from(&Board::new(1000, 1000).random());
+    let mut simd = SimdBitBoard::from(&Board::new(1000, 1000).random());
 
     b.iter(|| {
         for _ in 0..10 {
@@ -114,7 +112,7 @@ fn bench_bitboard_simd(b: &mut Bencher) {
 
 #[bench]
 fn bench_bitboard_population(b: &mut Bencher) {
-    let brd = BitBoard::new(1000, 1000).random();
+    let brd = ScalarBitBoard::new(1000, 1000).random();
     b.iter(|| brd.population());
 }
 

@@ -1,144 +1,61 @@
-//! The `std::simd`-accelerated board: a `BitBoard` whose `step` runs the pair
-//! kernel over two adjacent 64-cell words at once with `u64x2`. It exposes the
-//! same `LifeBoard` surface, delegating everything to the wrapped board except
-//! `step`, which uses `BitBoard::step_with` to supply the SIMD kernel over the
-//! double-buffered words. This module — and its `--backend simd` selection — is
+//! The `std::simd`-accelerated kernel: a [`Kernel`] for `BitBoard` whose
+//! `compute` runs the bit-parallel formula over two adjacent 64-cell words at
+//! once with `u64x2`, falling back to the scalar `threshold` for the odd
+//! trailing word of each row. It is selected by the `--backend simd` flag, which
+//! builds a `BitBoard<SimdKernel>`. This module — and that selection — is
 //! available only under the `unstable` feature.
 
 use core::simd::prelude::*;
 
-use crate::Rules;
-use crate::bitboard::BitBoard;
-use crate::board::Board;
-use crate::life::LifeBoard;
-use std::fmt;
-use std::str::FromStr;
+use super::{Kernel, StepCtx, select, threshold, zero_padding};
 
-/// A `std::simd`-accelerated board: a `BitBoard` whose `step` runs the pair
-/// kernel over two adjacent words at once. It exposes the same `LifeBoard`
-/// surface, delegating everything to the wrapped board except `step`.
-#[derive(Clone, Debug)]
-pub struct SimdBoard(BitBoard);
+/// The `std::simd` kernel: runs the bit-parallel formula over two adjacent words
+/// at once. Zero-sized, so a `BitBoard<SimdKernel>` costs no more than a scalar
+/// one.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SimdKernel;
 
-impl fmt::Display for SimdBoard {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+impl Kernel for SimdKernel {
+    /// The two-words-at-once SIMD path: the pair kernel runs over the
+    /// double-buffered words, with the scalar `threshold` handling the odd
+    /// trailing word of each row (if any).
+    fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx) {
+        let is_conway = ctx.rules.is_conway();
+        let born = ctx.rules.born_mask();
+        let survive = ctx.rules.survive_mask();
+        let rows = ctx.rows;
+        let wp = ctx.words_per_row;
 
-impl FromStr for SimdBoard {
-    type Err = crate::board::ParseBoardErr;
+        for r in 0..rows {
+            let top = if r == 0 {
+                &[]
+            } else {
+                &current[(r - 1) * wp..r * wp]
+            };
+            let mid = &current[r * wp..(r + 1) * wp];
+            let bot = if r + 1 >= rows {
+                &[]
+            } else {
+                &current[(r + 1) * wp..(r + 2) * wp]
+            };
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(SimdBoard(BitBoard::from_str(s)?))
-    }
-}
-
-impl From<&Board> for SimdBoard {
-    fn from(board: &Board) -> Self {
-        SimdBoard(BitBoard::from(board))
-    }
-}
-
-impl PartialEq for SimdBoard {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for SimdBoard {}
-
-impl LifeBoard for SimdBoard {
-    fn new(rows: usize, cols: usize) -> Self {
-        SimdBoard(BitBoard::new(rows, cols))
-    }
-
-    fn rows(&self) -> usize {
-        self.0.rows()
-    }
-
-    fn cols(&self) -> usize {
-        self.0.cols()
-    }
-
-    fn generation(&self) -> usize {
-        self.0.generation()
-    }
-
-    fn population(&self) -> usize {
-        self.0.population()
-    }
-
-    fn next_generation(&self) -> Self {
-        SimdBoard(self.0.next_generation())
-    }
-
-    /// The two-words-at-once SIMD path: the pair kernel runs over the wrapped
-    /// board's double buffer, supplied through `BitBoard::step_with`.
-    fn step(&mut self) {
-        self.0.step_with(|current, next, board| {
-            let is_conway = board.rules.is_conway();
-            let born = board.rules.born_mask();
-            let survive = board.rules.survive_mask();
-            let rows = board.rows();
-            let wp = board.words_per_row;
-
-            for r in 0..rows {
-                let top = if r == 0 {
-                    &[]
-                } else {
-                    &current[(r - 1) * wp..r * wp]
-                };
-                let mid = &current[r * wp..(r + 1) * wp];
-                let bot = if r + 1 >= rows {
-                    &[]
-                } else {
-                    &current[(r + 1) * wp..(r + 2) * wp]
-                };
-
-                let mut wc = 0;
-                while wc + 1 < wp {
-                    next[r * wp + wc..r * wp + wc + 2].copy_from_slice(&threshold_pair(
-                        top, mid, bot, wc, is_conway, born, survive,
-                    ));
-                    wc += 2;
-                }
-                if wc < wp {
-                    next[r * wp + wc] = board.threshold(current, wp, r, wc);
-                }
+            let mut wc = 0;
+            while wc + 1 < wp {
+                next[r * wp + wc..r * wp + wc + 2]
+                    .copy_from_slice(&threshold_pair(top, mid, bot, wc, is_conway, born, survive));
+                wc += 2;
             }
-            board.zero_padding(next, rows, wp);
-        });
-    }
-
-    fn with_rules(&self, rules: &Rules) -> Self {
-        SimdBoard(self.0.with_rules(rules))
-    }
-
-    fn toggle(&self, x: usize, y: usize) -> Self {
-        SimdBoard(self.0.toggle(x, y))
-    }
-
-    fn clear(&self) -> Self {
-        SimdBoard(self.0.clear())
-    }
-
-    fn random(&self) -> Self {
-        SimdBoard(self.0.random())
-    }
-
-    fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self {
-        SimdBoard(self.0.pad(top, right, bottom, left))
-    }
-
-    fn iter(&self) -> impl Iterator<Item = bool> + '_ {
-        self.0.iter()
+            if wc < wp {
+                next[r * wp + wc] = threshold(top, mid, bot, wp, wc, ctx.rules);
+            }
+        }
+        zero_padding(next, ctx.cols, ctx.rows, wp);
     }
 }
 
 // Bit-parallel next words for the pair [wc, wc+1], computed with `u64x2`. Same
-// bit-parallel formula as the scalar `BitBoard::threshold`, but the neighbor
-// bitboards and the odd/even reduction run on two words at once.
+// bit-parallel formula as the scalar `threshold`, but the neighbor bitboards and
+// the odd/even reduction run on two words at once.
 #[inline]
 fn threshold_pair(
     top: &[u64],
@@ -189,9 +106,7 @@ fn threshold_pair(
     let all8 = n_tl & tc & n_tr & n_ml & n_mr & n_bl & bc & n_br;
     let mut next = u64x2::splat(0);
     for n in 0..8 {
-        let mut m = BitBoard::select(bit0, n & 1 != 0)
-            & BitBoard::select(bit1, n & 2 != 0)
-            & BitBoard::select(c02, n & 4 != 0);
+        let mut m = select(bit0, n & 1 != 0) & select(bit1, n & 2 != 0) & select(c02, n & 4 != 0);
         if n == 4 {
             m &= !all8; // count 8 shares count 4's 3-bit pattern
         }
@@ -239,22 +154,25 @@ fn w(row: &[u64], i: isize) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::bitboard::bitboard_to_str;
+    use super::super::{ScalarBitBoard, SimdBitBoard};
+    use crate::Rules;
+    use crate::board::Board;
+    use crate::lifeboard::LifeBoard;
+    use std::str::FromStr;
 
     // The SIMD path must agree with both the scalar bit-parallel path and
     // the reference `Board`, generation-for-generation.
     #[test]
     fn test_simd_matches_scalar() {
         let mut board = Board::new(130, 130).random();
-        let mut scalar = BitBoard::from(&board);
-        let mut simd = SimdBoard::from(&board);
+        let mut scalar = ScalarBitBoard::from(&board);
+        let mut simd = SimdBitBoard::from(&board);
         for g in 0..6 {
             board = board.next_generation();
             scalar.step();
             simd.step();
             assert_eq!(
-                bitboard_to_str(&scalar),
+                scalar.to_string(),
                 format!("{simd}"),
                 "scalar/simd mismatch at gen {g}"
             );
@@ -273,7 +191,7 @@ mod tests {
     fn test_simd_backend_non_conway() {
         let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
         let mut board = Board::new(130, 130).with_rules(&rule).random();
-        let mut simd = SimdBoard::from(&board).with_rules(&rule);
+        let mut simd = SimdBitBoard::from(&board).with_rules(&rule);
         for g in 0..6 {
             assert_eq!(
                 board.to_string(),
@@ -292,7 +210,7 @@ mod tests {
     fn test_simd_every_count() {
         let rule = Rules::from_str("B012345678/S012345678").unwrap();
         let mut board = Board::new(130, 130).with_rules(&rule).random();
-        let mut simd = SimdBoard::from(&board).with_rules(&rule);
+        let mut simd = SimdBitBoard::from(&board).with_rules(&rule);
         for g in 0..3 {
             assert_eq!(
                 board.to_string(),
@@ -311,7 +229,7 @@ mod tests {
     fn test_simd_no_count_8() {
         let rule = Rules::from_str("B3/S24").unwrap(); // HighLife
         let mut board = Board::new(130, 130).with_rules(&rule).random();
-        let mut simd = SimdBoard::from(&board).with_rules(&rule);
+        let mut simd = SimdBitBoard::from(&board).with_rules(&rule);
         for g in 0..3 {
             assert_eq!(
                 board.to_string(),
@@ -323,16 +241,16 @@ mod tests {
         }
     }
 
-    // Exercises `SimdBoard`'s `FromStr` (success and error) and its
-    // `PartialEq`/`Display`, the glue not reached through `exercise`.
+    // Exercises the SIMD backend's `FromStr` (success and error) and its
+    // `PartialEq`/`Display` glue through the `BitBoard<SimdKernel>` type.
     #[test]
     fn test_simd_board_parse_and_eq() {
-        let a = SimdBoard::from_str("@\n.\n.").unwrap();
-        let b = SimdBoard::from_str("@\n.\n.").unwrap();
-        let c = SimdBoard::from_str(".\n.\n.").unwrap();
+        let a = SimdBitBoard::from_str("@\n.\n.").unwrap();
+        let b = SimdBitBoard::from_str("@\n.\n.").unwrap();
+        let c = SimdBitBoard::from_str(".\n.\n.").unwrap();
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert_ne!(a.to_string(), c.to_string());
-        assert!(SimdBoard::from_str("X").is_err());
+        assert!(SimdBitBoard::from_str("X").is_err());
     }
 }

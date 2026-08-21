@@ -8,7 +8,7 @@ use std::iter::{repeat, repeat_n};
 use std::str::FromStr;
 
 use crate::Rules;
-use crate::life::LifeBoard;
+use crate::lifeboard::LifeBoard;
 
 const LIVE_CELL: char = '@';
 const DEAD_CELL: char = '.';
