@@ -5,9 +5,7 @@
 mod benchmarks;
 
 mod bitboard;
-mod life;
-#[cfg(feature = "unstable")]
-mod simd_board;
+mod lifeboard;
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -17,11 +15,11 @@ mod board;
 mod rules;
 
 use args::{Alignment, Args, Backend, parse_args};
-use bitboard::BitBoard;
-use board::Board;
-use life::LifeBoard;
+use bitboard::ScalarBitBoard;
 #[cfg(feature = "unstable")]
-use simd_board::SimdBoard;
+use bitboard::SimdBitBoard;
+use board::Board;
+use lifeboard::LifeBoard;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -39,9 +37,9 @@ pub fn run() {
     // program is generic over `B`, so there's no runtime indirection.
     match args.backend {
         Backend::Board => run_with(&args, make_board::<Board>(&args), cli_run_gens),
-        Backend::BitBoard => run_with(&args, make_board::<BitBoard>(&args), cli_run_gens),
+        Backend::BitBoard => run_with(&args, make_board::<ScalarBitBoard>(&args), cli_run_gens),
         #[cfg(feature = "unstable")]
-        Backend::Simd => run_with(&args, make_board::<SimdBoard>(&args), cli_run_gens),
+        Backend::Simd => run_with(&args, make_board::<SimdBitBoard>(&args), cli_run_gens),
     }
 }
 
@@ -203,7 +201,7 @@ mod backend_tests {
         // identically through the shared `LifeBoard` interface.
         let template = ".@.\n..@\n@@."; // a glider
         let mut board: Board = Board::from_str(template).unwrap();
-        let mut bits: BitBoard = BitBoard::from_str(template).unwrap();
+        let mut bits: ScalarBitBoard = ScalarBitBoard::from_str(template).unwrap();
         for _ in 0..5 {
             board.step();
             bits.step();
@@ -218,11 +216,11 @@ mod backend_tests {
         let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
 
         let mut board = Board::new(40, 40).with_rules(&rule).random();
-        let mut bits = BitBoard::from(&board).with_rules(&rule);
+        let mut bits = ScalarBitBoard::from(&board).with_rules(&rule);
         for _ in 0..6 {
             assert_eq!(
                 format!("{board}"),
-                crate::bitboard::bitboard_to_str(&bits),
+                bits.to_string(),
                 "Day & Night mismatch at a generation"
             );
             board.step();
@@ -260,12 +258,12 @@ mod backend_tests {
 
     #[test]
     fn bitboard_via_trait() {
-        exercise(BitBoard::new(4, 4));
+        exercise(ScalarBitBoard::new(4, 4));
     }
 
     #[cfg(feature = "unstable")]
     #[test]
     fn simd_via_trait() {
-        exercise(SimdBoard::new(4, 4));
+        exercise(SimdBitBoard::new(4, 4));
     }
 }
