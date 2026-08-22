@@ -11,6 +11,9 @@ use std::str::FromStr;
 
 use crate::Rules;
 
+pub const LIVE_CELL: char = '@';
+pub const DEAD_CELL: char = '.';
+
 /// A cellular board the application can run over.
 pub trait LifeBoard: Display + FromStr + Eq {
     /// A fresh, all-dead board of the given size.

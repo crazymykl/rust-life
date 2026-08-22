@@ -22,7 +22,7 @@
 
 use crate::Rules;
 use crate::board::Board;
-use crate::lifeboard::LifeBoard;
+use crate::lifeboard::{DEAD_CELL, LIVE_CELL, LifeBoard};
 use std::fmt::{self, Write};
 use std::str::FromStr;
 
@@ -189,7 +189,7 @@ impl<K: Kernel> fmt::Display for BitBoard<K> {
             for c in 0..self.cols {
                 let idx = r * wp + c / BITS;
                 let live = (self.current[idx] >> (c % BITS)) & 1 == 1;
-                f.write_char(if live { '@' } else { '.' })?;
+                f.write_char(if live { LIVE_CELL } else { DEAD_CELL })?;
             }
             if r + 1 < self.rows {
                 f.write_char('\n')?;
@@ -385,8 +385,8 @@ mod tests {
     fn test_parity_at_word_boundary() {
         // 64-wide board with a vertical blinker in column 63 (the last bit
         // of a word), so its other neighbors fall in the next word.
-        let mut row = vec!['.'; 64];
-        row[63] = '@';
+        let mut row = vec![DEAD_CELL; 64];
+        row[63] = LIVE_CELL;
         let line: String = row.iter().collect();
         let text = format!("{line}\n{line}\n{line}");
         let (mut board, mut bits) = from_text(&text);
