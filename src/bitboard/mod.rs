@@ -15,7 +15,7 @@
 //!   loop: Conway's B3/S23 is one expression, other rules one per
 //!   live-neighbor count.
 //!
-//! A `std::simd` variant (`SimdKernel`, in `simd.rs`) runs the same
+//! A `std::simd` variant (`SimdKernel`, in `kernel/simd.rs`) runs the same
 //! formula on two adjacent words at once with `u64x2`. Kernels are selected at
 //! the type level — `BitBoard` is generic over a `Kernel` — and the SIMD one is
 //! gated behind the `unstable` feature.
@@ -23,41 +23,24 @@
 use crate::Rules;
 use crate::board::Board;
 use crate::lifeboard::LifeBoard;
-use std::fmt::{self, Debug, Write};
+use std::fmt::{self, Write};
 use std::str::FromStr;
 
-mod scalar;
+mod kernel;
 
+#[cfg(feature = "rayon")]
+pub(crate) use kernel::ParallelScalarKernel;
+#[cfg(all(feature = "rayon", feature = "unstable"))]
+pub(crate) use kernel::ParallelSimdKernel;
+pub(crate) use kernel::ScalarKernel;
 #[cfg(feature = "unstable")]
-mod simd;
-
-pub(crate) use scalar::ScalarKernel;
-#[cfg(feature = "unstable")]
-pub(crate) use simd::SimdKernel;
+pub(crate) use kernel::SimdKernel;
+use kernel::{Kernel, StepCtx};
 
 const BITS: usize = 64;
 
-/// How a `BitBoard`'s double-buffered `step` turns the current word buffer into
-/// the next one. `ScalarKernel` walks the board one word at a time; the
-/// `std::simd` `SimdKernel` (in `simd.rs`, `unstable` only) does two
-/// adjacent words at once. A kernel is a stateless tag, so it derives `Default`.
-pub(crate) trait Kernel: Clone + Debug + Default {
-    /// Fill `next` with the next generation of `current`, using `ctx` for the
-    /// board's rule and dimensions.
-    fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx);
-}
-
-/// The per-step facts a kernel needs: the rule and the dimensions governing
-/// neighbor slicing and padding.
-pub(crate) struct StepCtx<'a> {
-    pub rules: &'a Rules,
-    pub rows: usize,
-    pub words_per_row: usize,
-    pub cols: usize,
-}
-
 #[derive(Clone, Debug)]
-pub struct BitBoard<K: Kernel = ScalarKernel> {
+pub(crate) struct BitBoard<K: Kernel = ScalarKernel> {
     // Double buffer: the current generation's cells.
     current: Vec<u64>,
     // Scratch buffer for the next generation; swapped with `current` on step.
@@ -85,13 +68,21 @@ pub type ScalarBitBoard = BitBoard<ScalarKernel>;
 #[cfg(feature = "unstable")]
 pub type SimdBitBoard = BitBoard<SimdKernel>;
 
+/// The rayon row-parallel bit-packed board (`--backend parallel`).
+#[cfg(feature = "rayon")]
+pub type ParallelScalarBitBoard = BitBoard<ParallelScalarKernel>;
+
+/// The rayon row-parallel `std::simd` bit-packed board (`--backend parallel-simd`).
+#[cfg(all(feature = "rayon", feature = "unstable"))]
+pub type ParallelSimdBitBoard = BitBoard<ParallelSimdKernel>;
+
 impl<K: Kernel> BitBoard<K> {
-    pub fn new(rows: usize, cols: usize) -> Self {
+    pub(crate) fn new(rows: usize, cols: usize) -> Self {
         Self::new_with_rules(rows, cols, &Rules::conway())
     }
 
     /// A fresh, all-dead board of the given size that simulates under `rules`.
-    pub fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> Self {
+    pub(crate) fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> Self {
         let words_per_row = cols.div_ceil(BITS);
         let words = vec![0u64; rows * words_per_row];
         BitBoard {
@@ -106,19 +97,19 @@ impl<K: Kernel> BitBoard<K> {
         }
     }
 
-    pub fn rows(&self) -> usize {
+    fn rows(&self) -> usize {
         self.rows
     }
 
-    pub fn cols(&self) -> usize {
+    fn cols(&self) -> usize {
         self.cols
     }
 
-    pub fn generation(&self) -> usize {
+    fn generation(&self) -> usize {
         self.generation
     }
 
-    pub fn population(&self) -> usize {
+    pub(crate) fn population(&self) -> usize {
         // Only the low `cols` bits of the final word of each row are valid;
         // zero out the padding bits before counting.
         let pad = self.words_per_row * BITS - self.cols;
@@ -139,129 +130,11 @@ impl<K: Kernel> BitBoard<K> {
     }
 }
 
-// Fetch the (left, center, right) source words for a single row at word
-// column `wc`, treating out-of-bounds neighbors as dead (0). `row` is a
-// slice already positioned at the start of that generation row.
-#[inline]
-fn row3(row: &[u64], per_row: usize, wc: usize) -> (u64, u64, u64) {
-    if row.is_empty() {
-        return (0, 0, 0);
-    }
-    let c = row[wc];
-    let l = if wc == 0 { 0 } else { row[wc - 1] };
-    let r = if wc + 1 < per_row { row[wc + 1] } else { 0 };
-    (l, c, r)
-}
-
-// Pick `plane` or its complement, so a count bit can be matched against a
-// target bit (1) or its absence (0) without a branch.
-#[inline]
-pub(crate) fn select<P: Copy + std::ops::Not<Output = P>>(plane: P, set: bool) -> P {
-    if set { plane } else { !plane }
-}
-
-// Compute the next-generation word for one 64-cell word at (r, wc) with a
-// fully bit-parallel formula (no per-cell loop). The 3x3 neighborhood is
-// built as eight neighbor bitboards and reduced to 3 count bits; Conway's
-// B3/S23 is a single branchless expression, while any other rule is
-// applied per live-neighbor count (see the general path at the end).
-#[inline]
-pub(crate) fn threshold(
-    top: &[u64],
-    mid: &[u64],
-    bot: &[u64],
-    per_row: usize,
-    wc: usize,
-    rules: &Rules,
-) -> u64 {
-    // Eight neighbor bitboards for the 64 cells of this word.
-    let (tl, tc, tr) = row3(top, per_row, wc);
-    let (ml, mc, mr) = row3(mid, per_row, wc);
-    let (bl, bc, br) = row3(bot, per_row, wc);
-
-    let n_tl = tc << 1 | tl >> 63;
-    let n_tr = tc >> 1 | tr << 63;
-    let n_ml = mc << 1 | ml >> 63;
-    let n_mr = mc >> 1 | mr << 63;
-    let n_bl = bc << 1 | bl >> 63;
-    let n_br = bc >> 1 | br << 63;
-
-    // Per-row (odd, even) count of live neighbors: odd = an odd number of
-    // the row's cells are live, even = two or more are live, so a row's
-    // contribution to the total is 2*even + odd. The middle row omits the
-    // center cell, so it uses only left & right.
-    let t_odd = n_tl ^ tc ^ n_tr;
-    let t_even = (n_tl & tc) | (tc & n_tr) | (n_tl & n_tr);
-    let m_odd = n_ml ^ n_mr;
-    let m_even = n_ml & n_mr;
-    let b_odd = n_bl ^ bc ^ n_br;
-    let b_even = (n_bl & bc) | (bc & n_br) | (n_bl & n_br);
-
-    // Combine the three rows into bit0/bit1/bit2 of the 3x3 count.
-    let bit0 = t_odd ^ m_odd ^ b_odd;
-    let c01 = (t_odd & m_odd) | (t_odd & b_odd) | (m_odd & b_odd);
-    let bit1 = (t_even ^ m_even ^ b_even) ^ c01;
-    let c02 = (t_even & m_even)
-        | (t_even & b_even)
-        | (m_even & b_even)
-        | (t_even & c01)
-        | (m_even & c01)
-        | (b_even & c01);
-
-    // Fast path: Conway's B3/S23 is exactly `bit1 & !c02 & (bit0 | center)`.
-    if rules.is_conway() {
-        return bit1 & !c02 & (bit0 | mc);
-    }
-
-    // General path: apply the rule per live-neighbor count. The three count
-    // bits (bit0, bit1, c02) distinguish counts 0..7; a count of 8 folds onto
-    // the count-4 pattern, so its cells are pulled out separately as `all8`.
-    let all8 = n_tl & tc & n_tr & n_ml & n_mr & n_bl & bc & n_br;
-    let born = rules.born_mask();
-    let survive = rules.survive_mask();
-    let mut next = 0u64;
-    for n in 0..8 {
-        let mut m = select(bit0, n & 1 != 0) & select(bit1, n & 2 != 0) & select(c02, n & 4 != 0);
-        if n == 4 {
-            m &= !all8; // count 8 shares count 4's 3-bit pattern
-        }
-        if born & (1 << n) != 0 {
-            next |= m & !mc;
-        }
-        if survive & (1 << n) != 0 {
-            next |= m & mc;
-        }
-    }
-    // Count 8: all eight neighbors are live.
-    if born & (1 << 8) != 0 {
-        next |= all8 & !mc;
-    }
-    if survive & (1 << 8) != 0 {
-        next |= all8 & mc;
-    }
-    next
-}
-
-// Zero the padding bits of the last word of each row, so that cells
-// beyond `cols` never become phantom live neighbors of real cells.
-#[inline]
-pub(crate) fn zero_padding(dst: &mut [u64], cols: usize, rows: usize, wp: usize) {
-    let valid = cols % BITS;
-    let mask = if valid == 0 {
-        !0u64
-    } else {
-        (1u64 << valid) - 1
-    };
-    for r in 0..rows {
-        dst[r * wp + wp - 1] &= mask;
-    }
-}
-
 impl<K: Kernel> BitBoard<K> {
     /// Advance one generation **in place**, reusing the two word buffers
     /// (no allocation). This is the double-buffered, word-level, bit-parallel
     /// path.
-    pub fn step(&mut self) {
+    pub(crate) fn step(&mut self) {
         let current = std::mem::take(&mut self.current);
         let mut next = std::mem::take(&mut self.next);
         self.kernel.compute(
@@ -282,13 +155,13 @@ impl<K: Kernel> BitBoard<K> {
     /// Compute a brand-new generation (allocates). Kept for the cross-check
     /// tests that expect `let next = bits.next_generation();`.
     #[allow(dead_code)]
-    pub fn next_generation(&self) -> Self {
+    pub(crate) fn next_generation(&self) -> Self {
         let mut b = self.clone();
         b.step();
         b
     }
 
-    pub fn random(&self) -> Self {
+    pub(crate) fn random(&self) -> Self {
         use rand::{RngExt, distr::StandardUniform, rng};
         let len = self.current.len();
         let mut current = vec![0u64; len];
@@ -681,5 +554,52 @@ mod tests {
         let mut w = FailOnNewline;
         let bits = ScalarBitBoard::new(3, 3);
         assert!(write!(w, "{bits}").is_err());
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_parallel_scalar_matches_serial() {
+        // The row-parallel kernel must produce identical generations to the
+        // serial kernel and the reference board, across a wide and a narrow
+        // (odd words/row) board.
+        let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
+        for cols in [40usize, 130] {
+            let mut board = Board::new(50, cols).with_rules(&rule).random();
+            let mut serial = ScalarBitBoard::from(&board).with_rules(&rule);
+            let mut parallel = ParallelScalarBitBoard::from(&board).with_rules(&rule);
+            for g in 0..4 {
+                assert_eq!(serial.to_string(), board.to_string());
+                assert_eq!(
+                    parallel.to_string(),
+                    board.to_string(),
+                    "parallel scalar mismatch at gen {g}, {cols} cols"
+                );
+                board = board.next_generation();
+                serial.step();
+                parallel.step();
+            }
+        }
+    }
+
+    #[cfg(all(feature = "rayon", feature = "unstable"))]
+    #[test]
+    fn test_parallel_simd_matches_serial() {
+        // The row-parallel SIMD kernel must agree with the serial SIMD kernel
+        // and the reference board under a non-Conway rule.
+        let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
+        let mut board = Board::new(130, 130).with_rules(&rule).random();
+        let mut serial = SimdBitBoard::from(&board).with_rules(&rule);
+        let mut parallel = ParallelSimdBitBoard::from(&board).with_rules(&rule);
+        for g in 0..4 {
+            assert_eq!(serial.to_string(), board.to_string());
+            assert_eq!(
+                parallel.to_string(),
+                board.to_string(),
+                "parallel simd mismatch at gen {g}"
+            );
+            board = board.next_generation();
+            serial.step();
+            parallel.step();
+        }
     }
 }

@@ -15,6 +15,10 @@ mod board;
 mod rules;
 
 use args::{Alignment, Args, Backend, parse_args};
+#[cfg(feature = "rayon")]
+use bitboard::ParallelScalarBitBoard;
+#[cfg(all(feature = "rayon", feature = "unstable"))]
+use bitboard::ParallelSimdBitBoard;
 use bitboard::ScalarBitBoard;
 #[cfg(feature = "unstable")]
 use bitboard::SimdBitBoard;
@@ -38,8 +42,20 @@ pub fn run() {
     match args.backend {
         Backend::Board => run_with(&args, make_board::<Board>(&args), cli_run_gens),
         Backend::BitBoard => run_with(&args, make_board::<ScalarBitBoard>(&args), cli_run_gens),
+        #[cfg(feature = "rayon")]
+        Backend::Parallel => run_with(
+            &args,
+            make_board::<ParallelScalarBitBoard>(&args),
+            cli_run_gens,
+        ),
         #[cfg(feature = "unstable")]
         Backend::Simd => run_with(&args, make_board::<SimdBitBoard>(&args), cli_run_gens),
+        #[cfg(all(feature = "rayon", feature = "unstable"))]
+        Backend::ParallelSimd => run_with(
+            &args,
+            make_board::<ParallelSimdBitBoard>(&args),
+            cli_run_gens,
+        ),
     }
 }
 

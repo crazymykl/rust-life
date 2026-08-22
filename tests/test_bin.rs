@@ -183,6 +183,26 @@ fn test_cli_backend_bitboard() {
         .success();
 }
 
+#[cfg(feature = "rayon")]
+#[test]
+fn test_cli_backend_parallel() {
+    // The rayon row-parallel backend must evolve identically to the default `Board`.
+    bin()
+        .args([
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "--backend",
+            "parallel",
+            "-g1",
+            "-t",
+            "...\n@@@\n...",
+            "-p0",
+        ])
+        .assert()
+        .stdout(".@.\n.@.\n.@.\n")
+        .success();
+}
+
 #[cfg(feature = "unstable")]
 #[test]
 fn test_cli_backend_simd() {
@@ -193,6 +213,26 @@ fn test_cli_backend_simd() {
             "--no-gui",
             "--backend",
             "simd",
+            "-g1",
+            "-t",
+            "...\n@@@\n...",
+            "-p0",
+        ])
+        .assert()
+        .stdout(".@.\n.@.\n.@.\n")
+        .success();
+}
+
+#[cfg(all(feature = "rayon", feature = "unstable"))]
+#[test]
+fn test_cli_backend_parallel_simd() {
+    // The rayon row-parallel SIMD backend must evolve identically to the default `Board`.
+    bin()
+        .args([
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "--backend",
+            "parallel-simd",
             "-g1",
             "-t",
             "...\n@@@\n...",
