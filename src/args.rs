@@ -22,10 +22,20 @@ pub enum Backend {
     #[value(name = "bitboard")]
     BitBoard,
 
+    /// The rayon row-parallel bit-packed board (`rayon` feature).
+    #[cfg(feature = "rayon")]
+    #[value(name = "parallel")]
+    Parallel,
+
     /// The `std::simd` bit-packed board (two words at once, `unstable` only).
     #[cfg(feature = "unstable")]
     #[value(name = "simd")]
     Simd,
+
+    /// The rayon row-parallel `std::simd` bit-packed board (`rayon` + `unstable`).
+    #[cfg(all(feature = "rayon", feature = "unstable"))]
+    #[value(name = "parallel-simd")]
+    ParallelSimd,
 }
 
 impl std::fmt::Display for Backend {
@@ -33,8 +43,12 @@ impl std::fmt::Display for Backend {
         match self {
             Backend::Board => write!(f, "board"),
             Backend::BitBoard => write!(f, "bitboard"),
+            #[cfg(feature = "rayon")]
+            Backend::Parallel => write!(f, "parallel"),
             #[cfg(feature = "unstable")]
             Backend::Simd => write!(f, "simd"),
+            #[cfg(all(feature = "rayon", feature = "unstable"))]
+            Backend::ParallelSimd => write!(f, "parallel-simd"),
         }
     }
 }
@@ -116,7 +130,11 @@ mod tests {
     fn backend_display() {
         assert_eq!(Backend::Board.to_string(), "board");
         assert_eq!(Backend::BitBoard.to_string(), "bitboard");
+        #[cfg(feature = "rayon")]
+        assert_eq!(Backend::Parallel.to_string(), "parallel");
         #[cfg(feature = "unstable")]
         assert_eq!(Backend::Simd.to_string(), "simd");
+        #[cfg(all(feature = "rayon", feature = "unstable"))]
+        assert_eq!(Backend::ParallelSimd.to_string(), "parallel-simd");
     }
 }

@@ -53,6 +53,50 @@ impl Kernel for SimdKernel {
     }
 }
 
+/// The rayon-parallel variant of the `std::simd` kernel: the pair loop runs
+/// across the thread pool, one row-chunk per task, conflict-free because each
+/// output row writes a disjoint slice of `next`.
+#[cfg(feature = "rayon")]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct ParallelSimdKernel;
+
+#[cfg(feature = "rayon")]
+impl Kernel for ParallelSimdKernel {
+    fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx) {
+        let is_conway = ctx.rules.is_conway();
+        let born = ctx.rules.born_mask();
+        let survive = ctx.rules.survive_mask();
+        let rules = ctx.rules;
+        let rows = ctx.rows;
+        let wp = ctx.words_per_row;
+        use rayon::prelude::*;
+        next.par_chunks_mut(wp).enumerate().for_each(|(r, row)| {
+            let top = if r == 0 {
+                &[]
+            } else {
+                &current[(r - 1) * wp..r * wp]
+            };
+            let mid = &current[r * wp..(r + 1) * wp];
+            let bot = if r + 1 >= rows {
+                &[]
+            } else {
+                &current[(r + 1) * wp..(r + 2) * wp]
+            };
+            let mut wc = 0;
+            while wc + 1 < wp {
+                row[wc..wc + 2]
+                    .copy_from_slice(&threshold_pair(top, mid, bot, wc, is_conway, born, survive));
+                wc += 2;
+            }
+            if wc < wp {
+                row[wc] = threshold(top, mid, bot, wp, wc, rules);
+            }
+        });
+        zero_padding(next, ctx.cols, rows, wp);
+    }
+}
+
 // Bit-parallel next words for the pair [wc, wc+1], computed with `u64x2`. Same
 // bit-parallel formula as the scalar `threshold`, but the neighbor bitboards and
 // the odd/even reduction run on two words at once.
@@ -154,8 +198,8 @@ fn w(row: &[u64], i: isize) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{ScalarBitBoard, SimdBitBoard};
     use crate::Rules;
+    use crate::bitboard::{ScalarBitBoard, SimdBitBoard};
     use crate::board::Board;
     use crate::lifeboard::LifeBoard;
     use std::str::FromStr;
