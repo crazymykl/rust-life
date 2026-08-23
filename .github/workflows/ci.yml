@@ -81,7 +81,7 @@ jobs:
       - uses: ./.github/actions/linux-deps
       - uses: coactions/setup-xvfb@v1
         with:
-          run: cargo llvm-cov nextest --ignore-filename-regex src/args.rs --codecov --no-cfg-coverage --features test_mainthread --output-path codecov.json
+          run: cargo llvm-cov nextest --codecov --features test_mainthread --output-path codecov.json
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
