@@ -135,7 +135,8 @@ fn test_cli_generations() {
 
 #[test]
 fn test_cli_rules() {
-    // A valid custom rule is accepted and runs (Day & Night on a blank 3x3).
+    // A valid custom rule is accepted and runs
+    // (Day & Night on a 3x3 with a live center cell).
     bin()
         .args([
             #[cfg(feature = "gui")]
