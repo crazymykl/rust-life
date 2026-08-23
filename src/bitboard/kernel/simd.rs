@@ -7,7 +7,10 @@
 
 use core::simd::prelude::*;
 
-use super::{Kernel, StepCtx, select, threshold, zero_padding};
+use {
+    super::{Kernel, StepCtx, row_window, select, threshold, zero_padding},
+    crate::Rules,
+};
 
 /// The `std::simd` kernel: runs the bit-parallel formula over two adjacent words
 /// at once. Zero-sized, so a `BitBoard<SimdKernel>` costs no more than a scalar
@@ -20,36 +23,14 @@ impl Kernel for SimdKernel {
     /// double-buffered words, with the scalar `threshold` handling the odd
     /// trailing word of each row (if any).
     fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx) {
-        let is_conway = ctx.rules.is_conway();
-        let born = ctx.rules.born_mask();
-        let survive = ctx.rules.survive_mask();
         let rows = ctx.rows;
         let wp = ctx.words_per_row;
-
+        let rules = ctx.rules;
         for r in 0..rows {
-            let top = if r == 0 {
-                &[]
-            } else {
-                &current[(r - 1) * wp..r * wp]
-            };
-            let mid = &current[r * wp..(r + 1) * wp];
-            let bot = if r + 1 >= rows {
-                &[]
-            } else {
-                &current[(r + 1) * wp..(r + 2) * wp]
-            };
-
-            let mut wc = 0;
-            while wc + 1 < wp {
-                next[r * wp + wc..r * wp + wc + 2]
-                    .copy_from_slice(&threshold_pair(top, mid, bot, wc, is_conway, born, survive));
-                wc += 2;
-            }
-            if wc < wp {
-                next[r * wp + wc] = threshold(top, mid, bot, wp, wc, ctx.rules);
-            }
+            let (top, mid, bot) = row_window(current, r, wp, rows);
+            fill_row(&mut next[r * wp..(r + 1) * wp], top, mid, bot, wp, rules);
         }
-        zero_padding(next, ctx.cols, ctx.rows, wp);
+        zero_padding(next, ctx.cols, rows, wp);
     }
 }
 
@@ -64,36 +45,33 @@ pub(crate) struct ParallelSimdKernel;
 #[cfg(feature = "rayon")]
 impl Kernel for ParallelSimdKernel {
     fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx) {
-        let is_conway = ctx.rules.is_conway();
-        let born = ctx.rules.born_mask();
-        let survive = ctx.rules.survive_mask();
-        let rules = ctx.rules;
         let rows = ctx.rows;
         let wp = ctx.words_per_row;
+        let rules = ctx.rules;
         use rayon::prelude::*;
         next.par_chunks_mut(wp).enumerate().for_each(|(r, row)| {
-            let top = if r == 0 {
-                &[]
-            } else {
-                &current[(r - 1) * wp..r * wp]
-            };
-            let mid = &current[r * wp..(r + 1) * wp];
-            let bot = if r + 1 >= rows {
-                &[]
-            } else {
-                &current[(r + 1) * wp..(r + 2) * wp]
-            };
-            let mut wc = 0;
-            while wc + 1 < wp {
-                row[wc..wc + 2]
-                    .copy_from_slice(&threshold_pair(top, mid, bot, wc, is_conway, born, survive));
-                wc += 2;
-            }
-            if wc < wp {
-                row[wc] = threshold(top, mid, bot, wp, wc, rules);
-            }
+            let (top, mid, bot) = row_window(current, r, wp, rows);
+            fill_row(row, top, mid, bot, wp, rules);
         });
         zero_padding(next, ctx.cols, rows, wp);
+    }
+}
+
+// Fill one output row from its (top, mid, bot) window, two words at a time with
+// `u64x2`, falling back to the scalar `threshold` for the odd trailing word.
+#[inline]
+fn fill_row(row: &mut [u64], top: &[u64], mid: &[u64], bot: &[u64], wp: usize, rules: &Rules) {
+    let is_conway = rules.is_conway();
+    let born = rules.born_mask();
+    let survive = rules.survive_mask();
+    let mut wc = 0;
+    while wc + 1 < wp {
+        row[wc..wc + 2]
+            .copy_from_slice(&threshold_pair(top, mid, bot, wc, is_conway, born, survive));
+        wc += 2;
+    }
+    if wc < wp {
+        row[wc] = threshold(top, mid, bot, wp, wc, rules);
     }
 }
 

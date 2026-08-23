@@ -2,7 +2,9 @@
 //! board one word at a time through the shared `threshold` and `zero_padding`
 //! helpers in the parent module.
 
-use super::{Kernel, StepCtx, threshold, zero_padding};
+use crate::Rules;
+
+use super::{Kernel, StepCtx, row_window, threshold, zero_padding};
 
 /// The default, word-by-word bit-parallel kernel.
 #[derive(Clone, Copy, Debug, Default)]
@@ -10,24 +12,14 @@ pub(crate) struct ScalarKernel;
 
 impl Kernel for ScalarKernel {
     fn compute(&self, current: &[u64], next: &mut [u64], ctx: &StepCtx) {
+        let rows = ctx.rows;
         let wp = ctx.words_per_row;
-        for r in 0..ctx.rows {
-            let top = if r == 0 {
-                &[]
-            } else {
-                &current[(r - 1) * wp..r * wp]
-            };
-            let mid = &current[r * wp..(r + 1) * wp];
-            let bot = if r + 1 >= ctx.rows {
-                &[]
-            } else {
-                &current[(r + 1) * wp..(r + 2) * wp]
-            };
-            for wc in 0..wp {
-                next[r * wp + wc] = threshold(top, mid, bot, wp, wc, ctx.rules);
-            }
+        let rules = ctx.rules;
+        for r in 0..rows {
+            let (top, mid, bot) = row_window(current, r, wp, rows);
+            fill_row(&mut next[r * wp..(r + 1) * wp], top, mid, bot, wp, rules);
         }
-        zero_padding(next, ctx.cols, ctx.rows, wp);
+        zero_padding(next, ctx.cols, rows, wp);
     }
 }
 
@@ -47,21 +39,18 @@ impl Kernel for ParallelScalarKernel {
         let rules = ctx.rules;
         use rayon::prelude::*;
         next.par_chunks_mut(wp).enumerate().for_each(|(r, row)| {
-            let top = if r == 0 {
-                &[]
-            } else {
-                &current[(r - 1) * wp..r * wp]
-            };
-            let mid = &current[r * wp..(r + 1) * wp];
-            let bot = if r + 1 >= rows {
-                &[]
-            } else {
-                &current[(r + 1) * wp..(r + 2) * wp]
-            };
-            row.iter_mut().enumerate().for_each(|(wc, word)| {
-                *word = threshold(top, mid, bot, wp, wc, rules);
-            });
+            let (top, mid, bot) = row_window(current, r, wp, rows);
+            fill_row(row, top, mid, bot, wp, rules);
         });
         zero_padding(next, ctx.cols, rows, wp);
     }
+}
+
+// Fill one output row (a `wp`-word slice) from its (top, mid, bot) window, one
+// word at a time.
+#[inline]
+fn fill_row(row: &mut [u64], top: &[u64], mid: &[u64], bot: &[u64], wp: usize, rules: &Rules) {
+    row.iter_mut().enumerate().for_each(|(wc, word)| {
+        *word = threshold(top, mid, bot, wp, wc, rules);
+    });
 }
