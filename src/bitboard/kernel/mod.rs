@@ -163,3 +163,22 @@ fn zero_padding(dst: &mut [u64], cols: usize, rows: usize, wp: usize) {
         dst[r * wp + wp - 1] &= mask;
     }
 }
+
+// The three source rows straddling output row `r`: the row above, the row
+// itself, and the row below. Out-of-bounds top/bottom are the empty slice, so
+// the first and last rows behave as dead cells.
+#[inline]
+fn row_window(current: &[u64], r: usize, wp: usize, rows: usize) -> (&[u64], &[u64], &[u64]) {
+    let top = if r == 0 {
+        &[]
+    } else {
+        &current[(r - 1) * wp..r * wp]
+    };
+    let mid = &current[r * wp..(r + 1) * wp];
+    let bot = if r + 1 >= rows {
+        &[]
+    } else {
+        &current[(r + 1) * wp..(r + 2) * wp]
+    };
+    (top, mid, bot)
+}
