@@ -2,9 +2,9 @@
 //! CLI can drive any of them (the `Vec<bool>` `Board` and the bit-packed
 //! `BitBoard`) without knowing which one they got.
 //!
-//! The fast, allocation-free paths (`BitBoard::step`/`step_simd`) stay as
-//! inherent methods on `BitBoard`; this trait only covers the value-returning
-//! surface the application actually drives.
+//! The fast, allocation-free paths (`BitBoard::step`, and its `std::simd`
+//! `SimdKernel` variant) stay as inherent methods on `BitBoard`; this trait
+//! only covers the value-returning surface the application actually drives.
 
 use std::fmt::Display;
 use std::str::FromStr;

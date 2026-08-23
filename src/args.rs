@@ -14,7 +14,7 @@ pub enum Alignment {
 
 #[derive(ValueEnum, Copy, Clone, Debug)]
 pub enum Backend {
-    /// The `Vec<bool>` board (rayon-parallel).
+    /// The `Vec<bool>` board (rayon-parallel so long as the feature is on).
     #[value(name = "board")]
     Board,
 
