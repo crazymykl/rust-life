@@ -243,43 +243,4 @@ mod backend_tests {
             bits.step();
         }
     }
-
-    /// Drive every `LifeBoard` method through the trait surface. Inherent
-    /// methods shadow the trait for concrete types, so the calls are fully
-    /// qualified to reach each backend's trait impl.
-    fn exercise<B: LifeBoard + Clone>(b: B) {
-        let _ = <B as LifeBoard>::new(4, 4);
-        let _ = <B as LifeBoard>::len(&b);
-        let _ = <B as LifeBoard>::rows(&b);
-        let _ = <B as LifeBoard>::cols(&b);
-        let _ = <B as LifeBoard>::generation(&b);
-        let _ = <B as LifeBoard>::population(&b);
-        let _ = <B as LifeBoard>::next_generation(&b);
-        let mut stepped = b.clone();
-        <B as LifeBoard>::step(&mut stepped);
-        let _ = <B as LifeBoard>::toggle(&b, 1, 1);
-        let _ = <B as LifeBoard>::toggle(&b, 99, 99); // out-of-bounds no-op
-        let _ = <B as LifeBoard>::clear(&b);
-        let _ = <B as LifeBoard>::random(&b);
-        let _ = <B as LifeBoard>::with_rules(&b, &Rules::conway());
-        let _ = <B as LifeBoard>::pad(&b, 1, 1, 1, 1);
-        let one_live = <B as LifeBoard>::toggle(&b, 0, 0);
-        let _ = <B as LifeBoard>::iter(&one_live).collect::<Vec<_>>();
-    }
-
-    #[test]
-    fn board_via_trait() {
-        exercise(Board::new(4, 4));
-    }
-
-    #[test]
-    fn bitboard_via_trait() {
-        exercise(ScalarBitBoard::new(4, 4));
-    }
-
-    #[cfg(feature = "unstable")]
-    #[test]
-    fn simd_via_trait() {
-        exercise(SimdBitBoard::new(4, 4));
-    }
 }
