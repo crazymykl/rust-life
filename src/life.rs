@@ -19,6 +19,12 @@ pub trait LifeBoard: Display + FromStr + Eq {
     fn rows(&self) -> usize;
     fn cols(&self) -> usize;
     fn generation(&self) -> usize;
+
+    #[allow(clippy::len_without_is_empty)]
+    #[allow(dead_code)]
+    fn len(&self) -> usize {
+        self.rows() * self.cols()
+    }
     /// Number of live cells.
     #[allow(dead_code)]
     fn population(&self) -> usize;
@@ -50,5 +56,5 @@ pub trait LifeBoard: Display + FromStr + Eq {
     fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self;
 
     /// Visit every live/dead cell in row-major order (padding excluded).
-    fn for_each_cell(&self, f: impl FnMut(bool));
+    fn iter(&self) -> impl Iterator<Item = bool> + '_;
 }

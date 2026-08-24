@@ -69,10 +69,11 @@ impl<B: LifeBoard> GameState<B> {
 
     fn update_texture(&mut self) {
         let (rows, cols) = (self.brd.rows() as u32, self.brd.cols() as u32);
-        let mut cells = Vec::with_capacity(rows as usize * cols as usize * 4);
-        self.brd.for_each_cell(|live| {
-            cells.extend(if live { LIVE_COLOR } else { DEAD_COLOR });
-        });
+        let cells = self
+            .brd
+            .iter()
+            .flat_map(|live| if live { LIVE_COLOR } else { DEAD_COLOR })
+            .collect::<Vec<_>>();
 
         self.texture
             .update(

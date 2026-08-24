@@ -21,6 +21,11 @@ pub enum Backend {
     /// The bit-packed `Vec<u64>` board (word-level, allocation-free).
     #[value(name = "bitboard")]
     BitBoard,
+
+    /// The `std::simd` bit-packed board (two words at once, `unstable` only).
+    #[cfg(feature = "unstable")]
+    #[value(name = "simd")]
+    Simd,
 }
 
 impl std::fmt::Display for Backend {
@@ -28,6 +33,8 @@ impl std::fmt::Display for Backend {
         match self {
             Backend::Board => write!(f, "board"),
             Backend::BitBoard => write!(f, "bitboard"),
+            #[cfg(feature = "unstable")]
+            Backend::Simd => write!(f, "simd"),
         }
     }
 }
@@ -109,5 +116,7 @@ mod tests {
     fn backend_display() {
         assert_eq!(Backend::Board.to_string(), "board");
         assert_eq!(Backend::BitBoard.to_string(), "bitboard");
+        #[cfg(feature = "unstable")]
+        assert_eq!(Backend::Simd.to_string(), "simd");
     }
 }
