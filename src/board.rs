@@ -20,10 +20,6 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new(rows: usize, cols: usize) -> Board {
-        Board::new_with_rules(rows, cols, &Rules::conway())
-    }
-
     fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> Board {
         let new_board = repeat_n(false, rows * cols).collect();
 
@@ -34,28 +30,6 @@ impl Board {
             cols,
             generation: 0,
         }
-    }
-
-    pub fn rows(&self) -> usize {
-        self.rows
-    }
-
-    pub fn cols(&self) -> usize {
-        self.cols
-    }
-
-    pub fn generation(&self) -> usize {
-        self.generation
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        self.rows * self.cols
-    }
-
-    #[allow(dead_code)]
-    pub fn population(&self) -> usize {
-        self.iter().filter(|&x| x).count()
     }
 
     fn next_board(&self, new_board: Vec<bool>) -> Board {
@@ -83,15 +57,6 @@ impl Board {
         }
     }
 
-    pub fn random(&self) -> Board {
-        let brd = rng()
-            .sample_iter(&StandardUniform)
-            .take(self.len())
-            .collect();
-
-        self.next_board(brd)
-    }
-
     #[allow(dead_code)]
     pub fn serial_next_generation(&self) -> Board {
         let new_brd = (0..self.len())
@@ -99,14 +64,6 @@ impl Board {
             .collect();
 
         self.next_generation_board(new_brd)
-    }
-
-    pub fn next_generation(&self) -> Board {
-        #[cfg(feature = "rayon")]
-        let next = self.parallel_next_generation();
-        #[cfg(not(feature = "rayon"))]
-        let next = self.serial_next_generation();
-        next
     }
 
     #[cfg(feature = "rayon")]
@@ -151,66 +108,6 @@ impl Board {
         } else {
             self.rules.born_on(neighbors)
         }
-    }
-
-    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
-    pub fn toggle(&self, x: usize, y: usize) -> Board {
-        if x < self.rows && y < self.cols {
-            let mut board = self.board.clone();
-            board[x * self.cols + y] = !board[x * self.cols + y];
-            self.next_board(board)
-        } else {
-            self.clone()
-        }
-    }
-
-    #[cfg_attr(all(not(feature = "gui"), not(test)), allow(dead_code))]
-    pub fn clear(&self) -> Board {
-        let new_board = repeat_n(false, self.rows * self.cols).collect();
-        Board {
-            board: new_board,
-            rules: self.rules,
-            rows: self.rows,
-            cols: self.cols,
-            generation: 0,
-        }
-    }
-
-    pub fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Board {
-        let new_cell_values = repeat(false);
-        let (rows, cols) = (
-            max(0, top + self.rows as isize + bottom) as usize,
-            max(0, left + self.cols as isize + right) as usize,
-        );
-        let dst_cells = new_cell_values
-            .clone()
-            .take(if top > 0 { top as usize * cols } else { 0 })
-            .chain(
-                self.board
-                    .chunks(max(1, self.cols))
-                    .skip(if top < 0 { -top as usize } else { 0 })
-                    .take(rows)
-                    .flat_map(|row| {
-                        new_cell_values
-                            .clone()
-                            .take(if left > 0 { left as usize } else { 0 })
-                            .chain(
-                                row.iter()
-                                    .copied()
-                                    .skip(if left < 0 { -left as usize } else { 0 })
-                                    .chain(new_cell_values.clone()),
-                            )
-                            .take(cols)
-                    }),
-            )
-            .chain(new_cell_values.clone().take(if bottom > 0 {
-                bottom as usize * cols
-            } else {
-                0
-            }))
-            .collect();
-
-        self.resized_next_board(dst_cells, rows, cols)
     }
 }
 
@@ -270,23 +167,23 @@ impl FromStr for Board {
 
 impl LifeBoard for Board {
     fn new(rows: usize, cols: usize) -> Self {
-        Board::new(rows, cols)
+        Board::new_with_rules(rows, cols, &Rules::conway())
     }
 
     fn rows(&self) -> usize {
-        self.rows()
+        self.rows
     }
 
     fn cols(&self) -> usize {
-        self.cols()
+        self.cols
     }
 
     fn generation(&self) -> usize {
-        self.generation()
+        self.generation
     }
 
     fn population(&self) -> usize {
-        self.population()
+        self.iter().filter(|&x| x).count()
     }
 
     fn with_rules(&self, rules: &Rules) -> Self {
@@ -297,23 +194,71 @@ impl LifeBoard for Board {
     }
 
     fn next_generation(&self) -> Self {
-        Board::next_generation(self)
+        #[cfg(feature = "rayon")]
+        let next = self.parallel_next_generation();
+        #[cfg(not(feature = "rayon"))]
+        let next = self.serial_next_generation();
+        next
     }
 
     fn toggle(&self, x: usize, y: usize) -> Self {
-        Board::toggle(self, x, y)
+        if x < self.rows && y < self.cols {
+            let mut board = self.board.clone();
+            board[x * self.cols + y] = !board[x * self.cols + y];
+            self.next_board(board)
+        } else {
+            self.clone()
+        }
     }
 
     fn clear(&self) -> Self {
-        Board::clear(self)
+        Self::new_with_rules(self.rows, self.cols, &self.rules)
     }
 
     fn random(&self) -> Self {
-        Board::random(self)
+        let brd = rng()
+            .sample_iter(&StandardUniform)
+            .take(self.len())
+            .collect();
+
+        self.next_board(brd)
     }
 
     fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self {
-        Board::pad(self, top, right, bottom, left)
+        let new_cell_values = repeat(false);
+        let (rows, cols) = (
+            max(0, top + self.rows as isize + bottom) as usize,
+            max(0, left + self.cols as isize + right) as usize,
+        );
+        let dst_cells = new_cell_values
+            .clone()
+            .take(if top > 0 { top as usize * cols } else { 0 })
+            .chain(
+                self.board
+                    .chunks(max(1, self.cols))
+                    .skip(if top < 0 { -top as usize } else { 0 })
+                    .take(rows)
+                    .flat_map(|row| {
+                        new_cell_values
+                            .clone()
+                            .take(if left > 0 { left as usize } else { 0 })
+                            .chain(
+                                row.iter()
+                                    .copied()
+                                    .skip(if left < 0 { -left as usize } else { 0 })
+                                    .chain(new_cell_values.clone()),
+                            )
+                            .take(cols)
+                    }),
+            )
+            .chain(new_cell_values.clone().take(if bottom > 0 {
+                bottom as usize * cols
+            } else {
+                0
+            }))
+            .collect();
+
+        self.resized_next_board(dst_cells, rows, cols)
     }
 
     fn iter(&self) -> impl Iterator<Item = bool> + '_ {
