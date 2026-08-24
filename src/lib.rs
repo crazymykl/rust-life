@@ -12,6 +12,7 @@ mod gui;
 
 mod args;
 mod board;
+mod rules;
 
 use args::{Alignment, Args, Backend, parse_args};
 use bitboard::BitBoard;
@@ -23,6 +24,8 @@ use std::time::{Duration, Instant};
 #[cfg(all(feature = "test_mainthread", feature = "gui"))]
 pub use gui::test_helper::EXAMPLES;
 
+pub use rules::Rules;
+
 pub const CLEAR: &str = "\x1b[H\x1b[2J";
 
 pub fn run() {
@@ -31,8 +34,8 @@ pub fn run() {
     // The backend flag selects the concrete board type; the rest of the
     // program is generic over `B`, so there's no runtime indirection.
     match args.backend {
-        Backend::Board => run_with(&args, make_concrete::<Board>(&args), cli_run_gens),
-        Backend::BitBoard => run_with(&args, make_concrete::<BitBoard>(&args), cli_run_gens),
+        Backend::Board => run_with(&args, make_board::<Board>(&args), cli_run_gens),
+        Backend::BitBoard => run_with(&args, make_board::<BitBoard>(&args), cli_run_gens),
     }
 }
 
@@ -55,7 +58,7 @@ fn run_with<B: LifeBoard>(args: &Args, brd: B, cli_run_gens: Option<usize>) {
     cli(brd, args.ups, cli_run_gens);
 }
 
-fn make_concrete<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> B {
+fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> B {
     let mut brd = if let Some(template) = &args.template {
         let template = match B::from_str(template) {
             Ok(b) => b,
@@ -73,13 +76,17 @@ fn make_concrete<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) ->
             alignment_padding(args.align, horizontal_padding, vertical_padding)
         };
 
-        template.pad(top, right, bottom, left)
+        template
+            .pad(top, right, bottom, left)
+            .with_rules(&args.rules)
     } else {
-        B::new(args.rows, args.cols).random()
+        B::new(args.rows, args.cols)
+            .with_rules(&args.rules)
+            .random()
     };
 
     for _ in 0..args.generations.unwrap_or(0) {
-        brd = brd.next_generation();
+        brd.step();
     }
 
     brd
@@ -196,5 +203,23 @@ mod backend_tests {
             bits.step();
         }
         assert_eq!(format!("{board}"), format!("{bits}"));
+    }
+
+    #[test]
+    fn backends_agree_with_custom_rule() {
+        // Both backends must also agree under a non-Conway rule, exercising
+        // BitBoard's general per-count path against the reference Board.
+        let rule = Rules::from_str("B368/S245").unwrap(); // Day & Night
+        let mut board = Board::new(40, 40).with_rules(&rule).random();
+        let mut bits = BitBoard::from(&board).with_rules(&rule);
+        for _ in 0..6 {
+            assert_eq!(
+                format!("{board}"),
+                crate::bitboard::bitboard_to_str(&bits),
+                "Day & Night mismatch at a generation"
+            );
+            board.step();
+            bits.step();
+        }
     }
 }

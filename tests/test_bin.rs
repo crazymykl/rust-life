@@ -134,6 +134,37 @@ fn test_cli_generations() {
 }
 
 #[test]
+fn test_cli_rules() {
+    // A valid custom rule is accepted and runs (Day & Night on a blank 3x3).
+    bin()
+        .args(&[
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "-g0",
+            "--rules",
+            "B368/S245",
+            "-t",
+            "@",
+            "-p1",
+        ])
+        .assert()
+        .stdout("...\n.@.\n...\n")
+        .success();
+
+    // An out-of-range neighbor count is rejected at parse time.
+    bin()
+        .args(&[
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "-g0",
+            "--rules",
+            "B9/S23",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
 #[cfg(feature = "gui")]
 fn test_gui_scale() {
     bin().args(["-s0"]).assert().failure();
