@@ -6,6 +6,7 @@ use piston_window::{
 };
 
 use crate::board::Board;
+use crate::lifeboard::LifeBoard;
 
 use super::GameState;
 

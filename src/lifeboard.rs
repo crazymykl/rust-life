@@ -60,6 +60,6 @@ pub trait LifeBoard: Display + FromStr + Eq {
     /// Grow the board on each side by the given margins.
     fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self;
 
-    /// Visit every live/dead cell in row-major order (padding excluded).
+    /// Visit every live/dead cell in row-major order.
     fn iter(&self) -> impl Iterator<Item = bool> + '_;
 }

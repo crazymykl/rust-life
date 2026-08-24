@@ -10,6 +10,7 @@ use crate::bitboard::ScalarBitBoard;
 #[cfg(feature = "unstable")]
 use crate::bitboard::SimdBitBoard;
 use crate::board::Board;
+use crate::lifeboard::LifeBoard;
 use std::str::FromStr;
 
 #[bench]
