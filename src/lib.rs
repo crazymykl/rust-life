@@ -1,7 +1,11 @@
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
+#![cfg_attr(all(test, feature = "unstable"), feature(portable_simd))]
 
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
+
+#[cfg(test)]
+mod bitboard;
 
 #[cfg(feature = "gui")]
 mod gui;
