@@ -106,8 +106,9 @@ fn bench_bitboard_step_parallel(b: &mut Bencher) {
 /// (Day & Night here). This is the cost a custom `--rules` pays vs the fast path.
 #[bench]
 fn bench_bitboard_step_general(b: &mut Bencher) {
-    let mut brd =
-        ScalarBitBoard::new_with_rules(1000, 1000, &Rules::from_str("B368/S245").unwrap()).random();
+    let mut brd = ScalarBitBoard::new(1000, 1000)
+        .with_rules(&Rules::from_str("B368/S245").unwrap())
+        .random();
 
     b.iter(|| {
         for _ in 0..10 {

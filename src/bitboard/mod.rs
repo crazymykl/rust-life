@@ -77,26 +77,6 @@ pub type ParallelScalarBitBoard = BitBoard<ParallelScalarKernel>;
 pub type ParallelSimdBitBoard = BitBoard<ParallelSimdKernel>;
 
 impl<K: Kernel> BitBoard<K> {
-    pub(crate) fn new(rows: usize, cols: usize) -> Self {
-        Self::new_with_rules(rows, cols, &Rules::conway())
-    }
-
-    /// A fresh, all-dead board of the given size that simulates under `rules`.
-    pub(crate) fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> Self {
-        let words_per_row = cols.div_ceil(BITS);
-        let words = vec![0u64; rows * words_per_row];
-        BitBoard {
-            current: words.clone(),
-            next: words,
-            words_per_row,
-            rows,
-            cols,
-            rules: *rules,
-            generation: 0,
-            kernel: K::default(),
-        }
-    }
-
     fn rows(&self) -> usize {
         self.rows
     }
@@ -108,8 +88,40 @@ impl<K: Kernel> BitBoard<K> {
     fn generation(&self) -> usize {
         self.generation
     }
+}
 
-    pub(crate) fn population(&self) -> usize {
+impl<K: Kernel> LifeBoard for BitBoard<K> {
+    fn new(rows: usize, cols: usize) -> Self {
+        let words_per_row = cols.div_ceil(BITS);
+        let words = vec![0u64; rows * words_per_row];
+        BitBoard {
+            current: words.clone(),
+            next: words,
+            words_per_row,
+            rows,
+            cols,
+            rules: Rules::default(),
+            generation: 0,
+            kernel: K::default(),
+        }
+    }
+
+    fn rows(&self) -> usize {
+        self.rows()
+    }
+
+    fn cols(&self) -> usize {
+        self.cols()
+    }
+
+    fn generation(&self) -> usize {
+        self.generation()
+    }
+
+    /// Advance one generation **in place**, reusing the two word buffers
+    /// (no allocation). This is the double-buffered, word-level, bit-parallel
+    /// path.
+    fn population(&self) -> usize {
         // Only the low `cols` bits of the final word of each row are valid;
         // zero out the padding bits before counting.
         let pad = self.words_per_row * BITS - self.cols;
@@ -128,13 +140,9 @@ impl<K: Kernel> BitBoard<K> {
             })
             .sum::<u32>() as usize
     }
-}
 
-impl<K: Kernel> BitBoard<K> {
-    /// Advance one generation **in place**, reusing the two word buffers
-    /// (no allocation). This is the double-buffered, word-level, bit-parallel
-    /// path.
-    pub(crate) fn step(&mut self) {
+    /// The double-buffered, allocation-free fast path.
+    fn step(&mut self) {
         let current = std::mem::take(&mut self.current);
         let mut next = std::mem::take(&mut self.next);
         self.kernel.compute(
@@ -155,13 +163,25 @@ impl<K: Kernel> BitBoard<K> {
     /// Compute a brand-new generation (allocates). Kept for the cross-check
     /// tests that expect `let next = bits.next_generation();`.
     #[allow(dead_code)]
-    pub(crate) fn next_generation(&self) -> Self {
+    fn next_generation(&self) -> Self {
         let mut b = self.clone();
         b.step();
         b
     }
 
-    pub(crate) fn random(&self) -> Self {
+    fn toggle(&self, x: usize, y: usize) -> Self {
+        let mut b = self.clone();
+        if x < self.rows && y < self.cols {
+            b.current[x * self.words_per_row + y / BITS] ^= 1u64 << (y % BITS);
+        }
+        b
+    }
+
+    fn clear(&self) -> Self {
+        Self::new(self.rows, self.cols).with_rules(&self.rules)
+    }
+
+    fn random(&self) -> Self {
         use rand::{RngExt, distr::StandardUniform, rng};
         let len = self.current.len();
         let mut current = vec![0u64; len];
@@ -179,97 +199,6 @@ impl<K: Kernel> BitBoard<K> {
             generation: self.generation,
             kernel: K::default(),
         }
-    }
-}
-
-impl<K: Kernel> fmt::Display for BitBoard<K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let wp = self.words_per_row;
-        for r in 0..self.rows {
-            for c in 0..self.cols {
-                let idx = r * wp + c / BITS;
-                let live = (self.current[idx] >> (c % BITS)) & 1 == 1;
-                f.write_char(if live { LIVE_CELL } else { DEAD_CELL })?;
-            }
-            if r + 1 < self.rows {
-                f.write_char('\n')?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl<K: Kernel> FromStr for BitBoard<K> {
-    type Err = crate::board::ParseBoardErr;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Board::from_str(s).map(|board| Self::from(&board))
-    }
-}
-
-/// Re-pack a `BitBoard` into a `Vec<bool>` `Board` by rendering and re-parsing.
-/// Used by the bit-packed `pad`, which re-packs words when the width changes.
-impl<K: Kernel> From<&BitBoard<K>> for Board {
-    fn from(bits: &BitBoard<K>) -> Board {
-        Board::from_str(&bits.to_string()).expect("BitBoard renders to valid board text")
-    }
-}
-
-impl<K: Kernel> PartialEq for BitBoard<K> {
-    fn eq(&self, other: &Self) -> bool {
-        self.generation == other.generation
-            && self.rows == other.rows
-            && self.cols == other.cols
-            && self.current == other.current
-            && self.rules == other.rules
-    }
-}
-
-impl<K: Kernel> Eq for BitBoard<K> {}
-
-impl<K: Kernel> LifeBoard for BitBoard<K> {
-    fn new(rows: usize, cols: usize) -> Self {
-        Self::new(rows, cols)
-    }
-
-    fn rows(&self) -> usize {
-        self.rows()
-    }
-
-    fn cols(&self) -> usize {
-        self.cols()
-    }
-
-    fn generation(&self) -> usize {
-        self.generation()
-    }
-
-    fn population(&self) -> usize {
-        self.population()
-    }
-
-    fn next_generation(&self) -> Self {
-        Self::next_generation(self)
-    }
-
-    /// The double-buffered, allocation-free fast path.
-    fn step(&mut self) {
-        Self::step(self);
-    }
-
-    fn toggle(&self, x: usize, y: usize) -> Self {
-        let mut b = self.clone();
-        if x < self.rows && y < self.cols {
-            b.current[x * self.words_per_row + y / BITS] ^= 1u64 << (y % BITS);
-        }
-        b
-    }
-
-    fn clear(&self) -> Self {
-        Self::new_with_rules(self.rows, self.cols, &self.rules)
-    }
-
-    fn random(&self) -> Self {
-        Self::random(self)
     }
 
     /// Re-tag this board to simulate under a different rule.
@@ -306,6 +235,35 @@ impl<K: Kernel> LifeBoard for BitBoard<K> {
     }
 }
 
+impl<K: Kernel> fmt::Display for BitBoard<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `iter` yields every cell in row-major order; a newline ends each
+        // row, but not the last.
+        for (i, live) in self.iter().enumerate() {
+            f.write_char(if live { LIVE_CELL } else { DEAD_CELL })?;
+            if (i + 1) % self.cols() == 0 && i + 1 < self.len() {
+                f.write_char('\n')?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<K: Kernel> FromStr for BitBoard<K> {
+    type Err = crate::board::ParseBoardErr;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Board::from_str(s).map(|board| Self::from(&board))
+    }
+}
+
+/// Re-pack a `BitBoard` into a `Vec<bool>` `Board` by rendering and re-parsing.
+/// Used by the bit-packed `pad`, which re-packs words when the width changes.
+impl<K: Kernel> From<&BitBoard<K>> for Board {
+    fn from(bits: &BitBoard<K>) -> Board {
+        Board::from_str(&bits.to_string()).expect("BitBoard renders to valid board text")
+    }
+}
+
 /// Build a `BitBoard` from a `Vec<bool>` `Board`'s cell stream, so the two
 /// representations can be compared generation-for-generation.
 impl<K: Kernel> From<&Board> for BitBoard<K> {
@@ -321,6 +279,18 @@ impl<K: Kernel> From<&Board> for BitBoard<K> {
         bits
     }
 }
+
+impl<K: Kernel> PartialEq for BitBoard<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation
+            && self.rows == other.rows
+            && self.cols == other.cols
+            && self.current == other.current
+            && self.rules == other.rules
+    }
+}
+
+impl<K: Kernel> Eq for BitBoard<K> {}
 
 #[cfg(test)]
 mod tests {
