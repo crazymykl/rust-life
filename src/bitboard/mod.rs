@@ -337,6 +337,7 @@ mod tests {
         }
         assert_eq!(board.generation(), 8);
         assert_eq!(bits.generation(), 8);
+        assert_eq!(LifeBoard::generation(&bits), 8);
     }
 
     #[test]
