@@ -1,6 +1,8 @@
+use crate::Rules;
 #[cfg(feature = "gui")]
 use crate::gui;
 use clap::{Parser, ValueEnum};
+use std::str::FromStr;
 
 #[derive(ValueEnum, Copy, Clone, Debug)]
 #[rustfmt::skip]
@@ -88,6 +90,11 @@ pub(crate) struct Args {
     /// Board representation to simulate
     #[arg(short, long, default_value_t = Backend::Board)]
     pub(crate) backend: Backend,
+
+    /// Custom neighborhood rule in Golly form (e.g. `B368/S245` for Day &
+    /// Night). Defaults to Conway's `B3/S23`.
+    #[arg(long, default_value = "B3/S23", value_parser = Rules::from_str)]
+    pub(crate) rules: Rules,
 }
 
 pub(crate) fn parse_args() -> Args {

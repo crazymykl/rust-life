@@ -11,8 +11,9 @@
 //! * **Word-level, branchless neighbor counting** — instead of calling a
 //!   per-cell function with per-edge branches, the 3x3 neighborhood is built
 //!   as eight neighbor bitboards and reduced to the (odd, even) carry bits,
-//!   then the Conway rules are applied in a handful of bitwise ops with no
-//!   per-cell loop.
+//!   then the rule is applied in a handful of bitwise ops with no per-cell
+//!   loop: Conway's B3/S23 is one expression, other rules one per
+//!   live-neighbor count.
 //!
 //! A `std::simd` variant (`step_simd`) runs the same formula on two adjacent
 //! words at once with `u64x2`. It is gated behind the `unstable` feature.
@@ -20,6 +21,7 @@
 #[cfg(all(feature = "unstable", test))]
 use core::simd::prelude::*;
 
+use crate::Rules;
 use crate::board::Board;
 use crate::life::LifeBoard;
 use std::fmt::{self, Write};
@@ -36,42 +38,19 @@ pub struct BitBoard {
     words_per_row: usize,
     rows: usize,
     cols: usize,
-    // The bit-parallel fast path hard-codes the Conway rules (born on 3,
-    // survive on 2 or 3). These tables are kept for the `new_with_rules` API
-    // but are not read by the fast path.
-    #[allow(dead_code)]
-    born: [bool; 9],
-    #[allow(dead_code)]
-    survive: [bool; 9],
+    // The rule to apply. When it's Conway's B3/S23 the branchless fast path
+    // runs; otherwise the general per-neighbor-count path does.
+    rules: Rules,
     generation: usize,
 }
 
 impl BitBoard {
     pub fn new(rows: usize, cols: usize) -> BitBoard {
-        let born = [3usize];
-        let survive = [2, 3];
-        Self::new_with_rules(rows, cols, born, survive)
+        Self::new_with_rules(rows, cols, &Rules::conway())
     }
 
-    pub fn new_with_rules(
-        rows: usize,
-        cols: usize,
-        born: [usize; 1],
-        survive: [usize; 2],
-    ) -> BitBoard {
-        let mut born_table = [false; 9];
-        for &c in &born {
-            if c < 9 {
-                born_table[c] = true;
-            }
-        }
-        let mut survive_table = [false; 9];
-        for &c in &survive {
-            if c < 9 {
-                survive_table[c] = true;
-            }
-        }
-
+    /// A fresh, all-dead board of the given size that simulates under `rules`.
+    pub fn new_with_rules(rows: usize, cols: usize, rules: &Rules) -> BitBoard {
         let words_per_row = cols.div_ceil(BITS);
         let words = vec![0u64; rows * words_per_row];
         BitBoard {
@@ -80,8 +59,7 @@ impl BitBoard {
             words_per_row,
             rows,
             cols,
-            born: born_table,
-            survive: survive_table,
+            rules: *rules,
             generation: 0,
         }
     }
@@ -143,11 +121,18 @@ impl BitBoard {
         (l, c, r)
     }
 
+    // Pick `plane` or its complement, so a count bit can be matched against a
+    // target bit (1) or its absence (0) without a branch.
+    #[inline]
+    fn select(plane: u64, set: bool) -> u64 {
+        if set { plane } else { !plane }
+    }
+
     // Compute the next-generation word for one 64-cell word at (r, wc) with a
     // fully bit-parallel formula (no per-cell loop). The 3x3 neighborhood is
-    // built as eight neighbor bitboards; their per-cell count is reduced to
-    // (odd, even) carry bits, and the Conway rules (born on 3, survive on 2 or
-    // 3) are applied as `next = bit1 & !bit2 & (bit0 | center)`.
+    // built as eight neighbor bitboards and reduced to 3 count bits; Conway's
+    // B3/S23 is a single branchless expression, while any other rule is
+    // applied per live-neighbor count (see the general path at the end).
     #[inline]
     fn threshold(&self, src: &[u64], per_row: usize, r: usize, wc: usize) -> u64 {
         let top = if r == 0 {
@@ -196,9 +181,40 @@ impl BitBoard {
             | (m_even & c01)
             | (b_even & c01);
 
-        // born on exactly 3, survive on 2 or 3:
-        //   next = bit1 & !c02 & (bit0 | center)
-        bit1 & !c02 & (bit0 | mc)
+        // Fast path: Conway's B3/S23 is exactly `bit1 & !c02 & (bit0 | center)`.
+        if self.rules.is_conway() {
+            return bit1 & !c02 & (bit0 | mc);
+        }
+
+        // General path: apply the rule per live-neighbor count. The three count
+        // bits (bit0, bit1, c02) distinguish counts 0..7; a count of 8 folds onto
+        // the count-4 pattern, so its cells are pulled out separately as `all8`.
+        let all8 = n_tl & tc & n_tr & n_ml & n_mr & n_bl & bc & n_br;
+        let born = self.rules.born_mask();
+        let survive = self.rules.survive_mask();
+        let mut next = 0u64;
+        for n in 0..8 {
+            let mut m = Self::select(bit0, n & 1 != 0)
+                & Self::select(bit1, n & 2 != 0)
+                & Self::select(c02, n & 4 != 0);
+            if n == 4 {
+                m &= !all8; // count 8 shares count 4's 3-bit pattern
+            }
+            if born & (1 << n) != 0 {
+                next |= m & !mc;
+            }
+            if survive & (1 << n) != 0 {
+                next |= m & mc;
+            }
+        }
+        // Count 8: all eight neighbors are live.
+        if born & (1 << 8) != 0 {
+            next |= all8 & !mc;
+        }
+        if survive & (1 << 8) != 0 {
+            next |= all8 & mc;
+        }
+        next
     }
 
     // Fill `dst` with the next generation of `src`, one word at a time.
@@ -247,6 +263,12 @@ impl BitBoard {
     /// reduction run on two words at once. Gated behind `unstable`.
     #[cfg(all(feature = "unstable", test))]
     pub fn step_simd(&mut self) {
+        // The SIMD pair path is B3/S23-only; defer to the scalar general path
+        // for any other rule.
+        if !self.rules.is_conway() {
+            self.step();
+            return;
+        }
         let current = std::mem::take(&mut self.current);
         let mut next = std::mem::take(&mut self.next);
         let rows = self.rows;
@@ -372,8 +394,7 @@ impl BitBoard {
             words_per_row: self.words_per_row,
             rows: self.rows,
             cols: self.cols,
-            born: self.born,
-            survive: self.survive,
+            rules: self.rules,
             generation: self.generation,
         }
     }
@@ -462,17 +483,25 @@ impl LifeBoard for BitBoard {
     }
 
     fn clear(&self) -> Self {
-        BitBoard::new(self.rows, self.cols)
+        BitBoard::new_with_rules(self.rows, self.cols, &self.rules)
     }
 
     fn random(&self) -> Self {
         BitBoard::random(self)
     }
 
+    /// Re-tag this board to simulate under a different rule.
+    fn with_rules(&self, rules: &Rules) -> Self {
+        let mut b = self.clone();
+        b.rules = *rules;
+        b
+    }
+
     fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Self {
         let board: Board = self.into();
         let padded = board.pad(top, right, bottom, left);
         let mut bits = BitBoard::from(&padded);
+        bits.rules = self.rules;
         bits.generation = self.generation;
         bits
     }
@@ -640,6 +669,30 @@ mod tests {
         let mut tcells: Vec<bool> = Vec::new();
         bits.for_each_cell(|c| tcells.push(c));
         assert_eq!(bcells, tcells);
+    }
+
+    #[test]
+    fn test_custom_rule_matches_board() {
+        // A non-Conway rule must give the same generations on both backends,
+        // exercising BitBoard's general per-count path against the reference.
+        for rule in [
+            Rules::from_str("B3/S1").unwrap(),
+            Rules::from_str("B368/S245").unwrap(), // Day & Night
+            Rules::from_str("B368/S4578").unwrap(), // 34
+            Rules::from_str("B48/S12").unwrap(),
+        ] {
+            let mut board = Board::new(30, 30).with_rules(&rule).random();
+            let mut bits = BitBoard::from(&board).with_rules(&rule);
+            for g in 0..6 {
+                assert_eq!(
+                    board.to_string(),
+                    bitboard_to_str(&bits),
+                    "rule {rule:?} mismatch at generation {g}"
+                );
+                board = board.next_generation();
+                bits.step();
+            }
+        }
     }
 
     #[cfg(feature = "unstable")]

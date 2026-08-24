@@ -8,6 +8,7 @@ use std::iter::{repeat, repeat_n};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::Rules;
 use crate::life::LifeBoard;
 
 const LIVE_CELL: char = '@';
@@ -177,7 +178,15 @@ impl Board {
     }
 
     pub fn clear(&self) -> Board {
-        Board::new(self.rows, self.cols)
+        let new_board = repeat_n(false, self.rows * self.cols).collect();
+        Board {
+            board: new_board,
+            born: Arc::clone(&self.born),
+            survive: Arc::clone(&self.survive),
+            rows: self.rows,
+            cols: self.cols,
+            generation: 0,
+        }
     }
 
     pub fn pad(&self, top: isize, right: isize, bottom: isize, left: isize) -> Board {
@@ -295,6 +304,13 @@ impl LifeBoard for Board {
 
     fn population(&self) -> usize {
         self.population()
+    }
+
+    fn with_rules(&self, rules: &Rules) -> Self {
+        let mut b = self.clone();
+        b.born = Arc::new(rules.born_list());
+        b.survive = Arc::new(rules.survive_list());
+        b
     }
 
     fn next_generation(&self) -> Self {

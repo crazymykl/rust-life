@@ -9,6 +9,8 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+use crate::Rules;
+
 /// A cellular board the application can run over.
 pub trait LifeBoard: Display + FromStr + Eq {
     /// A fresh, all-dead board of the given size.
@@ -25,11 +27,15 @@ pub trait LifeBoard: Display + FromStr + Eq {
     fn next_generation(&self) -> Self;
 
     /// Advance one generation in place. The default allocates via
-    /// `next_generation`; `BitBoard` overrides it with the double-buffered,
-    /// allocation-free path.
+    // `next_generation`; `BitBoard` overrides it with the double-buffered,
+    // allocation-free path.
     fn step(&mut self) {
         *self = self.next_generation();
     }
+
+    /// Return a copy of this board that simulates under the given rule
+    /// instead of its own. Cell layout is unchanged.
+    fn with_rules(&self, rules: &Rules) -> Self;
 
     /// Flip a single cell. A no-op if the coordinate is out of bounds.
     fn toggle(&self, x: usize, y: usize) -> Self;

@@ -1,6 +1,7 @@
 extern crate test;
 
 use self::test::Bencher;
+use crate::Rules;
 use crate::bitboard::BitBoard;
 use crate::board::Board;
 
@@ -68,9 +69,24 @@ fn bench_vecbool_large_ten_generations(b: &mut Bencher) {
 
 // In-place (double-buffered, no allocation) generation advances.
 
+/// The dedicated B3/S23 fast path (`bit1 & !c02 & (bit0 | center)`).
 #[bench]
 fn bench_bitboard_step(b: &mut Bencher) {
     let mut brd = BitBoard::new(1000, 1000).random();
+
+    b.iter(|| {
+        for _ in 0..10 {
+            brd.step();
+        }
+    });
+}
+
+/// The general per-neighbor-count path, used for any non-Conway rule
+/// (Day & Night here). This is the cost a custom `--rules` pays vs the fast path.
+#[bench]
+fn bench_bitboard_step_general(b: &mut Bencher) {
+    let mut brd =
+        BitBoard::new_with_rules(1000, 1000, &Rules::from_str("B368/S245").unwrap()).random();
 
     b.iter(|| {
         for _ in 0..10 {
