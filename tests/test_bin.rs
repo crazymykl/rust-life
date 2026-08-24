@@ -183,6 +183,26 @@ fn test_cli_backend_bitboard() {
         .success();
 }
 
+#[cfg(feature = "unstable")]
+#[test]
+fn test_cli_backend_simd() {
+    // The SIMD backend must evolve identically to the default `Board`.
+    bin()
+        .args([
+            #[cfg(feature = "gui")]
+            "--no-gui",
+            "--backend",
+            "simd",
+            "-g1",
+            "-t",
+            "...\n@@@\n...",
+            "-p0",
+        ])
+        .assert()
+        .stdout(".@.\n.@.\n.@.\n")
+        .success();
+}
+
 #[test]
 fn test_cli_bad_template() {
     // A template with an invalid character is rejected at parse time and the

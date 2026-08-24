@@ -4,6 +4,11 @@ use self::test::Bencher;
 use crate::Rules;
 use crate::bitboard::BitBoard;
 use crate::board::Board;
+#[cfg(feature = "unstable")]
+use crate::life::LifeBoard;
+#[cfg(feature = "unstable")]
+use crate::simd_board::SimdBoard;
+use std::str::FromStr;
 
 #[bench]
 fn bench_random(b: &mut Bencher) {
@@ -98,11 +103,11 @@ fn bench_bitboard_step_general(b: &mut Bencher) {
 #[cfg(feature = "unstable")]
 #[bench]
 fn bench_bitboard_simd(b: &mut Bencher) {
-    let mut brd = BitBoard::new(1000, 1000).random();
+    let mut simd = SimdBoard::from(&Board::new(1000, 1000).random());
 
     b.iter(|| {
         for _ in 0..10 {
-            brd.step_simd();
+            simd.step();
         }
     });
 }
@@ -117,31 +122,4 @@ fn bench_bitboard_population(b: &mut Bencher) {
 fn bench_vecbool_population(b: &mut Bencher) {
     let brd = Board::new(1000, 1000).random();
     b.iter(|| brd.population());
-}
-
-fn bin() -> Command {
-    #[allow(deprecated)] // the replacement macro won't work at compile time
-    Command::cargo_bin("rust-life").unwrap()
-}
-
-#[bench]
-fn bench_ten_cli_generations(b: &mut Bencher) {
-    b.iter(|| {
-        bin()
-            .args([
-                #[cfg(feature = "gui")]
-                "--no-gui",
-                "-G10",
-            ])
-            .assert()
-            .success();
-    });
-}
-
-#[cfg(feature = "gui")]
-#[bench]
-fn bench_ten_gui_generations(b: &mut Bencher) {
-    b.iter(|| {
-        bin().args(["-G10", "-x"]).assert().success();
-    });
 }

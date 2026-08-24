@@ -1,11 +1,13 @@
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
-#![cfg_attr(all(test, feature = "unstable"), feature(portable_simd))]
+#![cfg_attr(feature = "unstable", feature(portable_simd))]
 
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
 
 mod bitboard;
 mod life;
+#[cfg(feature = "unstable")]
+mod simd_board;
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -18,6 +20,8 @@ use args::{Alignment, Args, Backend, parse_args};
 use bitboard::BitBoard;
 use board::Board;
 use life::LifeBoard;
+#[cfg(feature = "unstable")]
+use simd_board::SimdBoard;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -36,6 +40,8 @@ pub fn run() {
     match args.backend {
         Backend::Board => run_with(&args, make_board::<Board>(&args), cli_run_gens),
         Backend::BitBoard => run_with(&args, make_board::<BitBoard>(&args), cli_run_gens),
+        #[cfg(feature = "unstable")]
+        Backend::Simd => run_with(&args, make_board::<SimdBoard>(&args), cli_run_gens),
     }
 }
 
@@ -229,6 +235,7 @@ mod backend_tests {
     /// qualified to reach each backend's trait impl.
     fn exercise<B: LifeBoard + Clone>(b: B) {
         let _ = <B as LifeBoard>::new(4, 4);
+        let _ = <B as LifeBoard>::len(&b);
         let _ = <B as LifeBoard>::rows(&b);
         let _ = <B as LifeBoard>::cols(&b);
         let _ = <B as LifeBoard>::generation(&b);
@@ -242,15 +249,8 @@ mod backend_tests {
         let _ = <B as LifeBoard>::random(&b);
         let _ = <B as LifeBoard>::with_rules(&b, &Rules::conway());
         let _ = <B as LifeBoard>::pad(&b, 1, 1, 1, 1);
-        // Visit cells of a board with a live cell, so the closure body runs.
         let one_live = <B as LifeBoard>::toggle(&b, 0, 0);
-        let mut live = 0usize;
-        <B as LifeBoard>::for_each_cell(&one_live, |c| {
-            if c {
-                live += 1;
-            }
-        });
-        let _ = live;
+        let _ = <B as LifeBoard>::iter(&one_live).collect::<Vec<_>>();
     }
 
     #[test]
@@ -261,5 +261,11 @@ mod backend_tests {
     #[test]
     fn bitboard_via_trait() {
         exercise(BitBoard::new(4, 4));
+    }
+
+    #[cfg(feature = "unstable")]
+    #[test]
+    fn simd_via_trait() {
+        exercise(SimdBoard::new(4, 4));
     }
 }

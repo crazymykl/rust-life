@@ -58,7 +58,7 @@ impl Board {
 
     #[allow(dead_code)]
     pub fn population(&self) -> usize {
-        self.iter().filter(|&&x| x).count()
+        self.iter().filter(|&x| x).count()
     }
 
     fn next_board(&self, new_board: Vec<bool>) -> Board {
@@ -212,10 +212,6 @@ impl Board {
 
         self.resized_next_board(dst_cells, rows, cols)
     }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, bool> {
-        self.board.iter()
-    }
 }
 
 impl fmt::Display for Board {
@@ -320,10 +316,8 @@ impl LifeBoard for Board {
         Board::pad(self, top, right, bottom, left)
     }
 
-    fn for_each_cell(&self, mut f: impl FnMut(bool)) {
-        for &cell in &self.board {
-            f(cell);
-        }
+    fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        self.board.iter().copied()
     }
 }
 
@@ -369,6 +363,12 @@ fn test_board_str_conversion_error() {
         Board::from_str("..\n.").unwrap_err().to_string(),
         "row length mismatch"
     );
+}
+
+#[test]
+fn test_len() {
+    let brd = testing_board(0);
+    assert_eq!(brd.len(), 9);
 }
 
 #[test]

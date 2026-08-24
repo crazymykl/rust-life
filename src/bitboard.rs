@@ -15,11 +15,9 @@
 //!   loop: Conway's B3/S23 is one expression, other rules one per
 //!   live-neighbor count.
 //!
-//! A `std::simd` variant (`step_simd`) runs the same formula on two adjacent
-//! words at once with `u64x2`. It is gated behind the `unstable` feature.
-
-#[cfg(all(feature = "unstable", test))]
-use core::simd::prelude::*;
+//! A `std::simd` variant (`SimdBoard::step`, in `simd_board.rs`) runs the same
+//! formula on two adjacent words at once with `u64x2`. It is gated behind the
+//! `unstable` feature.
 
 use crate::Rules;
 use crate::board::Board;
@@ -35,12 +33,12 @@ pub struct BitBoard {
     current: Vec<u64>,
     // Scratch buffer for the next generation; swapped with `current` on step.
     next: Vec<u64>,
-    words_per_row: usize,
+    pub(crate) words_per_row: usize,
     rows: usize,
     cols: usize,
     // The rule to apply. When it's Conway's B3/S23 the branchless fast path
     // runs; otherwise the general per-neighbor-count path does.
-    rules: Rules,
+    pub(crate) rules: Rules,
     generation: usize,
 }
 
@@ -76,22 +74,11 @@ impl BitBoard {
         self.generation
     }
 
-    /// Total number of cells (not words).
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.rows * self.cols
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.rows == 0 || self.cols == 0
-    }
-
     pub fn population(&self) -> usize {
         // Only the low `cols` bits of the final word of each row are valid;
         // zero out the padding bits before counting.
         let pad = self.words_per_row * BITS - self.cols;
-        let last_word_mask = if pad == 0 { !0u64 } else { !0u64 >> pad };
+        let last_word_mask = !0u64 >> pad;
         let per_row = self.words_per_row;
 
         self.current
@@ -124,7 +111,7 @@ impl BitBoard {
     // Pick `plane` or its complement, so a count bit can be matched against a
     // target bit (1) or its absence (0) without a branch.
     #[inline]
-    fn select(plane: u64, set: bool) -> u64 {
+    pub(crate) fn select<P: Copy + std::ops::Not<Output = P>>(plane: P, set: bool) -> P {
         if set { plane } else { !plane }
     }
 
@@ -134,7 +121,7 @@ impl BitBoard {
     // B3/S23 is a single branchless expression, while any other rule is
     // applied per live-neighbor count (see the general path at the end).
     #[inline]
-    fn threshold(&self, src: &[u64], per_row: usize, r: usize, wc: usize) -> u64 {
+    pub(crate) fn threshold(&self, src: &[u64], per_row: usize, r: usize, wc: usize) -> u64 {
         let top = if r == 0 {
             &[]
         } else {
@@ -233,7 +220,7 @@ impl BitBoard {
     // Zero the padding bits of the last word of each row, so that cells
     // beyond `cols` never become phantom live neighbors of real cells.
     #[inline]
-    fn zero_padding(&self, dst: &mut [u64], rows: usize, wp: usize) {
+    pub(crate) fn zero_padding(&self, dst: &mut [u64], rows: usize, wp: usize) {
         let valid = self.cols % BITS;
         let mask = if valid == 0 {
             !0u64
@@ -257,118 +244,20 @@ impl BitBoard {
         self.generation += 1;
     }
 
-    /// Advance one generation, processing two adjacent 64-cell words in
-    /// parallel with `std::simd::u64x2`. Same bit-parallel formula as the
-    /// scalar `threshold`, but the neighbor bitboards and the odd/even
-    /// reduction run on two words at once. Gated behind `unstable`.
-    #[cfg(all(feature = "unstable", test))]
-    pub fn step_simd(&mut self) {
-        // The SIMD pair path is B3/S23-only; defer to the scalar general path
-        // for any other rule.
-        if !self.rules.is_conway() {
-            self.step();
-            return;
-        }
+    /// Double-buffered in-place advance: compute the next buffer from the
+    /// current one via `compute`, then swap and bump the generation. The SIMD
+    /// backend (`SimdBoard`) uses this to supply its own kernel.
+    #[cfg(feature = "unstable")]
+    pub(crate) fn step_with<F>(&mut self, compute: F)
+    where
+        F: FnOnce(&[u64], &mut [u64], &Self),
+    {
         let current = std::mem::take(&mut self.current);
         let mut next = std::mem::take(&mut self.next);
-        let rows = self.rows;
-        let wp = self.words_per_row;
-
-        {
-            let src = &current;
-            let dst = &mut next;
-            for r in 0..rows {
-                let top = if r == 0 {
-                    &[]
-                } else {
-                    &src[(r - 1) * wp..r * wp]
-                };
-                let mid = &src[r * wp..(r + 1) * wp];
-                let bot = if r + 1 >= rows {
-                    &[]
-                } else {
-                    &src[(r + 1) * wp..(r + 2) * wp]
-                };
-
-                let mut wc = 0;
-                while wc + 1 < wp {
-                    dst[r * wp + wc..r * wp + wc + 2]
-                        .copy_from_slice(&Self::threshold_pair(top, mid, bot, wc));
-                    wc += 2;
-                }
-                if wc < wp {
-                    dst[r * wp + wc] = self.threshold(src, wp, r, wc);
-                }
-            }
-            self.zero_padding(dst, rows, wp);
-        }
-
+        compute(&current, &mut next, self);
         self.current = next;
         self.next = current;
         self.generation += 1;
-    }
-
-    // Bit-parallel next word for the pair [wc, wc+1], computed with `u64x2`.
-    #[cfg(all(feature = "unstable", test))]
-    #[inline]
-    fn threshold_pair(top: &[u64], mid: &[u64], bot: &[u64], wc: usize) -> [u64; 2] {
-        let (tl, tc, tr) = Self::pair3(top, wc);
-        let (ml, mc, mr) = Self::pair3(mid, wc);
-        let (bl, bc, br) = Self::pair3(bot, wc);
-
-        let n_tl = tc << 1 | tl >> 63;
-        let n_tr = tc >> 1 | tr << 63;
-        let n_ml = mc << 1 | ml >> 63;
-        let n_mr = mc >> 1 | mr << 63;
-        let n_bl = bc << 1 | bl >> 63;
-        let n_br = bc >> 1 | br << 63;
-
-        let t_odd = n_tl ^ tc ^ n_tr;
-        let t_even = (n_tl & tc) | (tc & n_tr) | (n_tl & n_tr);
-        let m_odd = n_ml ^ n_mr;
-        let m_even = n_ml & n_mr;
-        let b_odd = n_bl ^ bc ^ n_br;
-        let b_even = (n_bl & bc) | (bc & n_br) | (n_bl & n_br);
-
-        let bit0 = t_odd ^ m_odd ^ b_odd;
-        let c01 = (t_odd & m_odd) | (t_odd & b_odd) | (m_odd & b_odd);
-        let bit1 = (t_even ^ m_even ^ b_even) ^ c01;
-        let c02 = (t_even & m_even)
-            | (t_even & b_even)
-            | (m_even & b_even)
-            | (t_even & c01)
-            | (m_even & c01)
-            | (b_even & c01);
-
-        let next = bit1 & !c02 & (bit0 | mc);
-        [next[0], next[1]]
-    }
-
-    // (left, center, right) neighbor word-vectors for the pair [wc, wc+1],
-    // each a `u64x2` over the two lanes. Out-of-range lanes are zero, so the
-    // empty top/bottom rows and the left/right edges behave as dead cells.
-    #[cfg(all(feature = "unstable", test))]
-    #[inline]
-    fn pair3(row: &[u64], wc: usize) -> (u64x2, u64x2, u64x2) {
-        let a = Self::w(row, wc as isize - 1);
-        let b = Self::w(row, wc as isize);
-        let c = Self::w(row, wc as isize + 1);
-        let d = Self::w(row, wc as isize + 2);
-        (
-            u64x2::from_array([a, b]),
-            u64x2::from_array([b, c]),
-            u64x2::from_array([c, d]),
-        )
-    }
-
-    #[cfg(all(feature = "unstable", test))]
-    #[inline]
-    fn w(row: &[u64], i: isize) -> u64 {
-        if i < 0 {
-            0
-        } else {
-            row.get(i as usize).copied().unwrap_or(0)
-        }
     }
 
     /// Compute a brand-new generation (allocates). Kept for the cross-check
@@ -506,22 +395,21 @@ impl LifeBoard for BitBoard {
         bits
     }
 
-    fn for_each_cell(&self, mut f: impl FnMut(bool)) {
+    fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        let current = &self.current;
         let wp = self.words_per_row;
-        for r in 0..self.rows {
-            let base = r * wp;
-            for w in 0..wp {
-                let word = self.current[base + w];
-                // The final word of a row may hold fewer than 64 valid cells.
-                let valid = if w == wp - 1 { self.cols % BITS } else { BITS };
-                let nbits = if valid == 0 { BITS } else { valid };
-                let mut i = 0;
-                while i < nbits {
-                    f((word >> i) & 1 == 1);
-                    i += 1;
-                }
-            }
-        }
+        // Each word contributes its low 64 bits, except the final word of
+        // every row, which holds only `cols % 64` valid cells (a multiple of
+        // 64 keeps a full final word).
+        let last_nbits = {
+            let v = self.cols % BITS;
+            if v == 0 { BITS } else { v }
+        };
+        (0..current.len()).flat_map(move |idx| {
+            let word = current[idx];
+            let n = if idx % wp == wp - 1 { last_nbits } else { BITS };
+            (0..n).map(move |i| (word >> i) & 1 == 1)
+        })
     }
 }
 
@@ -533,7 +421,7 @@ impl From<&Board> for BitBoard {
         for (i, live) in board.iter().enumerate() {
             let row = i / board.cols();
             let col = i % board.cols();
-            if *live {
+            if live {
                 bits.current[row * bits.words_per_row + col / BITS] |= 1u64 << (col % BITS);
             }
         }
@@ -663,20 +551,16 @@ mod tests {
         assert_eq!((p_b.rows(), p_b.cols()), (p_t.rows(), p_t.cols()));
         assert_eq!(p_b.to_string(), bitboard_to_str(&p_t));
 
-        // for_each_cell yields the same row-major stream as iter()
-        let mut bcells: Vec<bool> = Vec::new();
-        board.for_each_cell(|c| bcells.push(c));
-        let mut tcells: Vec<bool> = Vec::new();
-        bits.for_each_cell(|c| tcells.push(c));
+        // iter() yields the same row-major stream on both backends
+        let bcells: Vec<bool> = board.iter().collect();
+        let tcells: Vec<bool> = bits.iter().collect();
         assert_eq!(bcells, tcells);
     }
 
     #[test]
-    fn test_len_and_is_empty() {
+    fn test_len() {
         let b = BitBoard::new(3, 4);
         assert_eq!(b.len(), 12);
-        assert!(!b.is_empty());
-        assert!(BitBoard::new(0, 0).is_empty());
     }
 
     #[test]
@@ -700,16 +584,11 @@ mod tests {
     }
 
     #[test]
-    fn test_for_each_cell_word_boundary() {
-        // A width that is an exact multiple of 64 exercises the `valid == 0`
-        // branch of `for_each_cell` (nbits falls back to a full word).
+    fn test_iter_word_boundary() {
+        // A width that is an exact multiple of 64 exercises the `cols % 64 == 0`
+        // branch of `iter` (the final word of each row keeps all 64 bits).
         let bits = BitBoard::new(3, 64).random();
-        let mut n = 0usize;
-        bits.for_each_cell(|c| {
-            if c {
-                n += 1;
-            }
-        });
+        let n = bits.iter().filter(|c| *c).count();
         assert_eq!(n, bits.population());
     }
 
@@ -792,30 +671,5 @@ mod tests {
         let mut w = FailOnNewline;
         let bits = BitBoard::new(3, 3);
         assert!(write!(w, "{bits}").is_err());
-    }
-
-    #[cfg(feature = "unstable")]
-    #[test]
-    fn test_simd_matches_scalar() {
-        // The SIMD path must agree with both the scalar bit-parallel path and
-        // the reference `Board`, generation-for-generation.
-        let mut board = Board::new(130, 130).random();
-        let mut scalar = BitBoard::from(&board);
-        let mut simd = BitBoard::from(&board);
-        for g in 0..6 {
-            board = board.next_generation();
-            scalar.step();
-            simd.step_simd();
-            assert_eq!(
-                bitboard_to_str(&scalar),
-                bitboard_to_str(&simd),
-                "scalar/simd mismatch at gen {g}"
-            );
-            assert_eq!(
-                board.to_string(),
-                bitboard_to_str(&simd),
-                "board/simd mismatch at gen {g}"
-            );
-        }
     }
 }
