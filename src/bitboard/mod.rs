@@ -378,7 +378,6 @@ mod tests {
 
     #[test]
     fn test_lifeboard_methods_match_board() {
-        use crate::lifeboard::LifeBoard;
         // 70 cols spans two words with a partial last word, so it exercises
         // the padding handling in the bit-packed paths.
         let board = Board::new(50, 70).random();
