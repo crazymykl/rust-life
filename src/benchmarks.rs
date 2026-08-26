@@ -40,8 +40,6 @@ fn bench_ten_parallel_generations(b: &mut Bencher) {
     });
 }
 
-// ---- Bit-packed prototype benchmarks ----
-
 #[bench]
 fn bench_bitboard_ten_generations(b: &mut Bencher) {
     let mut brd = ScalarBitBoard::new(200, 200).random();

@@ -78,15 +78,9 @@ fn run_with<B: LifeBoard>(args: &Args, brd: B, cli_run_gens: Option<usize>) {
     cli(brd, args.ups, cli_run_gens);
 }
 
-fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Display>>(args: &Args) -> B {
+fn make_board<B: LifeBoard + FromStr<Err: std::fmt::Debug>>(args: &Args) -> B {
     let mut brd = if let Some(template) = &args.template {
-        let template = match B::from_str(template) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        };
+        let template = B::from_str(&template.to_string()).expect("failed to parse template");
         let (top, right, bottom, left) = if let Some(padding) = &args.padding {
             parse_padding(padding)
         } else {

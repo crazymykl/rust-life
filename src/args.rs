@@ -1,6 +1,6 @@
-use crate::Rules;
 #[cfg(feature = "gui")]
 use crate::gui;
+use crate::{Rules, board::Board};
 use clap::{Parser, ValueEnum};
 use std::str::FromStr;
 
@@ -65,8 +65,8 @@ pub(crate) struct Args {
     pub(crate) rows: usize,
 
     /// A board template string
-    #[arg(short, long)]
-    pub(crate) template: Option<String>,
+    #[arg(short, long, value_parser = Board::from_str)]
+    pub(crate) template: Option<Board>,
 
     /// Alignment of the template within the world
     #[arg(short, long, value_enum, default_value_t = Alignment::Center)]
