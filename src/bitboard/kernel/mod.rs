@@ -47,17 +47,26 @@ pub(crate) struct StepCtx<'a> {
 }
 
 // Fetch the (left, center, right) source words for a single row at word
-// column `wc`, treating out-of-bounds neighbors as dead (0). `row` is a
-// slice already positioned at the start of that generation row.
+// column `wc`, treating out-of-bounds neighbors as dead (0). `row` is a slice
+// already positioned at the start of that generation row (empty for the
+// top/bottom border rows); out-of-bounds indices clamp to the dead word (0).
 #[inline]
-fn row3(row: &[u64], per_row: usize, wc: usize) -> (u64, u64, u64) {
-    if row.is_empty() {
-        return (0, 0, 0);
-    }
-    let c = row[wc];
-    let l = if wc == 0 { 0 } else { row[wc - 1] };
-    let r = if wc + 1 < per_row { row[wc + 1] } else { 0 };
-    (l, c, r)
+fn row3(row: &[u64], wc: usize) -> (u64, u64, u64) {
+    (
+        word_neighbor(row, wc as isize - 1),
+        word_neighbor(row, wc as isize),
+        word_neighbor(row, wc as isize + 1),
+    )
+}
+
+// The word at a (possibly out-of-bounds) index, or the dead word (0). The index
+// is `isize` so the left neighbor of word 0 (`0 - 1`) can go negative instead of
+// underflowing `usize`.
+#[inline]
+fn word_neighbor(row: &[u64], i: isize) -> u64 {
+    row.get(usize::try_from(i).unwrap_or(usize::MAX))
+        .copied()
+        .unwrap_or(0)
 }
 
 // Pick `plane` or its complement, so a count bit can be matched against a
@@ -73,18 +82,11 @@ fn select<P: Copy + std::ops::Not<Output = P>>(plane: P, set: bool) -> P {
 // B3/S23 is a single branchless expression, while any other rule is
 // applied per live-neighbor count (see the general path at the end).
 #[inline]
-fn threshold(
-    top: &[u64],
-    mid: &[u64],
-    bot: &[u64],
-    per_row: usize,
-    wc: usize,
-    rules: &Rules,
-) -> u64 {
+fn threshold(top: &[u64], mid: &[u64], bot: &[u64], wc: usize, rules: &Rules) -> u64 {
     // Eight neighbor bitboards for the 64 cells of this word.
-    let (tl, tc, tr) = row3(top, per_row, wc);
-    let (ml, mc, mr) = row3(mid, per_row, wc);
-    let (bl, bc, br) = row3(bot, per_row, wc);
+    let (tl, tc, tr) = row3(top, wc);
+    let (ml, mc, mr) = row3(mid, wc);
+    let (bl, bc, br) = row3(bot, wc);
 
     let n_tl = tc << 1 | tl >> 63;
     let n_tr = tc >> 1 | tr << 63;

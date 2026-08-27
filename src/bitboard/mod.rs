@@ -118,30 +118,24 @@ impl<K: Kernel> LifeBoard for BitBoard<K> {
         self.generation()
     }
 
-    /// Advance one generation **in place**, reusing the two word buffers
-    /// (no allocation). This is the double-buffered, word-level, bit-parallel
-    /// path.
     fn population(&self) -> usize {
-        // Only the low `cols` bits of the final word of each row are valid;
-        // zero out the padding bits before counting.
+        // Only the low `cols` bits of the final word of each row are valid, so
+        // mask out the padding bits of that word before counting.
         let pad = self.words_per_row * BITS - self.cols;
         let last_word_mask = !0u64 >> pad;
-        let per_row = self.words_per_row;
-
         self.current
-            .iter()
-            .enumerate()
-            .map(|(i, &w)| {
-                if i % per_row == per_row - 1 {
-                    (w & last_word_mask).count_ones()
-                } else {
-                    w.count_ones()
-                }
+            .chunks(self.words_per_row)
+            .map(|row| {
+                let (full, last) = row.split_at(row.len() - 1);
+                full.iter().copied().map(u64::count_ones).sum::<u32>()
+                    + (last[0] & last_word_mask).count_ones()
             })
             .sum::<u32>() as usize
     }
 
-    /// The double-buffered, allocation-free fast path.
+    /// Advance one generation **in place**, reusing the two word buffers
+    /// (no allocation). This is the double-buffered, word-level, bit-parallel
+    /// path.
     fn step(&mut self) {
         let current = std::mem::take(&mut self.current);
         let mut next = std::mem::take(&mut self.next);
