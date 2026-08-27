@@ -17,7 +17,7 @@ impl Kernel for ScalarKernel {
         let rules = ctx.rules;
         for r in 0..rows {
             let (top, mid, bot) = row_window(current, r, wp, rows);
-            fill_row(&mut next[r * wp..(r + 1) * wp], top, mid, bot, wp, rules);
+            fill_row(&mut next[r * wp..(r + 1) * wp], top, mid, bot, rules);
         }
         zero_padding(next, ctx.cols, rows, wp);
     }
@@ -40,7 +40,7 @@ impl Kernel for ParallelScalarKernel {
         use rayon::prelude::*;
         next.par_chunks_mut(wp).enumerate().for_each(|(r, row)| {
             let (top, mid, bot) = row_window(current, r, wp, rows);
-            fill_row(row, top, mid, bot, wp, rules);
+            fill_row(row, top, mid, bot, rules);
         });
         zero_padding(next, ctx.cols, rows, wp);
     }
@@ -49,8 +49,8 @@ impl Kernel for ParallelScalarKernel {
 // Fill one output row (a `wp`-word slice) from its (top, mid, bot) window, one
 // word at a time.
 #[inline]
-fn fill_row(row: &mut [u64], top: &[u64], mid: &[u64], bot: &[u64], wp: usize, rules: &Rules) {
+fn fill_row(row: &mut [u64], top: &[u64], mid: &[u64], bot: &[u64], rules: &Rules) {
     row.iter_mut().enumerate().for_each(|(wc, word)| {
-        *word = threshold(top, mid, bot, wp, wc, rules);
+        *word = threshold(top, mid, bot, wc, rules);
     });
 }

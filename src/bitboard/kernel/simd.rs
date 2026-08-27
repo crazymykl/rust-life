@@ -71,7 +71,7 @@ fn fill_row(row: &mut [u64], top: &[u64], mid: &[u64], bot: &[u64], wp: usize, r
         wc += 2;
     }
     if wc < wp {
-        row[wc] = threshold(top, mid, bot, wp, wc, rules);
+        row[wc] = threshold(top, mid, bot, wc, rules);
     }
 }
 
