@@ -36,14 +36,14 @@ jobs:
       - run: cargo clippy -- -D clippy::all
       - run: cargo nextest run --verbose --no-default-features
       - run: cargo clean
-      - run: cargo build --verbose --features test_mainthread
+      - run: cargo build --verbose
       - if: ${{ matrix.os == 'windows-latest' }}
         uses: ssciwr/setup-mesa-dist-win@v2
       - if: ${{ matrix.os == 'ubuntu-latest' }}
         uses: ./.github/actions/linux-deps
       - uses: coactions/setup-xvfb@v1
         with:
-          run: cargo nextest run --verbose --features test_mainthread
+          run: cargo nextest run --verbose
       - name: Upload test results to Codecov
         if: ${{ env.NEXTEST_PROFILE == 'ci' && !cancelled() }}
         uses: codecov/test-results-action@v1
@@ -81,7 +81,7 @@ jobs:
       - uses: ./.github/actions/linux-deps
       - uses: coactions/setup-xvfb@v1
         with:
-          run: cargo llvm-cov nextest --codecov --features test_mainthread --output-path codecov.json
+          run: cargo llvm-cov nextest --codecov --output-path codecov.json
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

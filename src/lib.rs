@@ -27,9 +27,6 @@ use lifeboard::LifeBoard;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-#[cfg(all(feature = "test_mainthread", feature = "gui"))]
-pub use gui::test_helper::EXAMPLES;
-
 pub use rules::Rules;
 
 pub const CLEAR: &str = "\x1b[H\x1b[2J";
@@ -60,7 +57,7 @@ pub fn run() {
 }
 
 /// Drives the GUI or CLI for the selected backend.
-fn run_with<B: LifeBoard>(args: &Args, brd: B, cli_run_gens: Option<usize>) {
+fn run_with<B: LifeBoard + 'static>(args: &Args, brd: B, cli_run_gens: Option<usize>) {
     #[cfg(feature = "gui")]
     if args.no_gui {
         cli(brd, args.ups, cli_run_gens);
