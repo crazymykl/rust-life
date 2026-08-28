@@ -12,15 +12,7 @@ edition = '2024'
 
 default = ["gui", "rayon"]
 unstable = []
-test_mainthread = []
-gui = ["dep:piston_window", "dep:image"]
-
-[[test]]
-
-name = "mainthread"
-harness = false
-path = "tests/test_mainthread.rs"
-required-features = ["test_mainthread", "gui"]
+gui = ["dep:winit", "dep:wgpu", "dep:futures", "dep:bytemuck"]
 
 [[bench]]
 
@@ -29,12 +21,14 @@ name = "e2e"
 [dependencies]
 
 rand = "0.10.2"
-piston_window = { version = "0.147.0", optional = true }
-image = { version = "0.25.9", optional = true }
+winit = { version = "0.30.13", optional = true }
+wgpu = { version = "29.0.4", optional = true }
+futures = { version = "0.3.31", optional = true }
+bytemuck = { version = "1.25.2", optional = true }
 rayon = { version = "1.10.0", optional = true }
 clap = { version = "4.5.26", features = ["derive"] }
 
 [dev-dependencies]
 
 assert_cmd = "2.0.16"
-libtest-mimic = "0.8.1"
+naga = "29.0.4"
