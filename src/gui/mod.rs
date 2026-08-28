@@ -12,8 +12,9 @@ use std::sync::Arc;
 
 use crate::lifeboard::LifeBoard;
 use wgpu::{
-    BindGroup, BindGroupLayout, CompositeAlphaMode, Device, Extent3d, PresentMode, Queue,
-    RenderPipeline, Surface, SurfaceConfiguration, Texture, TextureUsages, TextureViewDimension,
+    BindGroup, BindGroupLayout, Buffer, BufferUsages, CompositeAlphaMode, Device, Extent3d,
+    PresentMode, Queue, RenderPipeline, Surface, SurfaceConfiguration, Texture, TextureUsages,
+    TextureViewDimension,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
@@ -57,6 +58,7 @@ struct Wgpu {
     surface_config: SurfaceConfiguration,
     pipeline: RenderPipeline,
     bind_group_layout: BindGroupLayout,
+    rect_buffer: Buffer,
 }
 
 /// The `ApplicationHandler`: owns the window and renderer, paces the
@@ -126,12 +128,32 @@ impl<B: LifeBoard> State<B> {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &gpu.rect_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
             ],
         });
         self.gpu.cell_texture = Some(texture);
         self.gpu.cell_sampler = Some(sampler);
         self.gpu.bind_group = Some(bind_group);
         self.upload_cells(gpu);
+    }
+
+    /// Rebuild the cell texture if the board changed size (it does when a
+    /// window resize pads the board), so it matches the board dimensions.
+    fn resize_texture_if_needed(&mut self, gpu: &Wgpu) {
+        let Some(current) = self.gpu.cell_texture.as_ref() else {
+            return;
+        };
+        let (cols, rows) = (self.brd.cols(), self.brd.rows());
+        if current.size().width != cols as u32 || current.size().height != rows as u32 {
+            self.update_cell_texture(gpu);
+        }
     }
 
     fn new_cell_texture(device: &Device, cols: usize, rows: usize) -> Texture {
@@ -243,13 +265,16 @@ impl<B: LifeBoard> State<B> {
     /// Draw one frame: upload the current cells, then draw the cell texture
     /// stretched over the window and present.
     fn draw(&mut self, gpu: &Wgpu) {
-        let Some(bind_group) = self.gpu.bind_group.as_ref() else {
-            return;
-        };
         let (width, height) = (gpu.surface_config.width, gpu.surface_config.height);
         if width == 0 || height == 0 {
             return;
         }
+        // Rebuild the cell texture (and its bind group) first if the board
+        // changed size; then take the bind group for this frame.
+        self.resize_texture_if_needed(gpu);
+        let Some(bind_group) = self.gpu.bind_group.as_ref() else {
+            return;
+        };
         self.upload_cells(gpu);
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -359,6 +384,16 @@ fn create_wgpu(window: Arc<Window>) -> Result<Wgpu, String> {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -395,6 +430,13 @@ fn create_wgpu(window: Arc<Window>) -> Result<Wgpu, String> {
         cache: None,
     });
 
+    let rect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rect buffer"),
+        size: 16,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     Ok(Wgpu {
         device,
         queue,
@@ -402,6 +444,7 @@ fn create_wgpu(window: Arc<Window>) -> Result<Wgpu, String> {
         surface_config,
         pipeline,
         bind_group_layout,
+        rect_buffer,
     })
 }
 
@@ -420,6 +463,24 @@ impl<B: LifeBoard> App<B> {
         };
         gpu.surface.configure(&gpu.device, &gpu.surface_config);
     }
+
+    /// Update the (board px, window px) uniform the vertex shader uses to keep
+    /// the board anchored at the top-left at `scale` px per cell.
+    fn update_rect(&mut self, window: (u32, u32)) {
+        let Some(gpu) = self.gpu.as_mut() else {
+            return;
+        };
+        let state = self.state.borrow();
+        let scale = state.scale as f32;
+        let board = (
+            state.brd.cols() as f32 * scale,
+            state.brd.rows() as f32 * scale,
+        );
+        drop(state);
+        let data = [board.0, board.1, window.0 as f32, window.1 as f32];
+        gpu.queue
+            .write_buffer(&gpu.rect_buffer, 0, bytemuck::cast_slice(&data));
+    }
 }
 
 /// The shader: a full-window "super triangle" that samples the cell texture
@@ -431,6 +492,13 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
 };
 
+// The cell board's size (xy) and the window's size (zw), in pixels. The board
+// is anchored at the top-left and kept at exactly `scale` px per cell, so
+// cursor (px) / scale always maps to the right cell. Pixels outside the board
+// render dead.
+@group(0) @binding(2)
+var<uniform> rect: vec4<f32>;
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     let vertices = array<vec2<f32>, 3>(
@@ -441,8 +509,13 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     let p = vertices[vertex_index];
     var out: VsOut;
     out.pos = vec4<f32>(p, 0.0, 1.0);
-    // NDC `x` -1..1 -> u 0..1; NDC `y` -1..1 (bottom..top) -> v 1..0 (top row first).
-    out.uv = vec2<f32>((p.x + 1.0) * 0.5, (1.0 - p.y) * 0.5);
+    // NDC -1..1 -> window pixel coords with the origin at the top-left
+    // (NDC `y` points up, window `y` points down), then to the cell board's
+    // uv space (its top-left is uv (0, 0)). Pixels beyond the board map to
+    // uv >= 1 and the fragment stage clamps them to dead.
+    let ndc = p * 0.5 + 0.5;
+    let px = vec2<f32>(ndc.x, 1.0 - ndc.y) * rect.zw;
+    out.uv = px / rect.xy;
     return out;
 }
 
@@ -477,6 +550,7 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
         self.state.borrow_mut().init_cell_texture(&gpu);
         self.window = Some(window.clone());
         self.gpu = Some(gpu);
+        self.update_rect((width, height));
         // Draw the first frame right away, instead of waiting for the first
         // `about_to_wait` pass.
         window.request_redraw();
@@ -501,9 +575,6 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let Some(gpu) = self.gpu.as_ref() else {
-            return;
-        };
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 self.state.borrow_mut().cursor_moved(position);
@@ -525,6 +596,7 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
             WindowEvent::Resized(size) => {
                 self.reconfigure_surface(size.width, size.height);
                 self.state.borrow_mut().resized(size.width, size.height);
+                self.update_rect((size.width, size.height));
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
@@ -539,7 +611,11 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
                         event_loop.exit();
                     }
                 }
-                self.state.borrow_mut().draw(gpu);
+                // Only draw once the window and renderer exist (they are built
+                // in `resumed`).
+                if let Some(gpu) = self.gpu.as_ref() {
+                    self.state.borrow_mut().draw(gpu);
+                }
             }
             WindowEvent::CloseRequested => {
                 self.state.borrow_mut().close_requested();
@@ -646,7 +722,7 @@ mod tests {
     fn quit_event() {
         let mut s = make_state();
         assert!(!s.should_close);
-        s.close_requested();
+        s.key_press(&Key::Named(NamedKey::Escape));
         assert!(s.should_close);
     }
 
