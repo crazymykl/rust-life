@@ -18,11 +18,20 @@ gui = ["dep:winit", "dep:wgpu", "dep:futures", "dep:bytemuck"]
 
 name = "e2e"
 
+# The windowed GUI self-test. It is a plain test *binary* (no test harness) so
+# that its `main` runs on the process's main thread — required by `winit` on
+# macOS, and the reason the lib unit tests can't drive a real event loop.
+[[test]]
+
+name = "gui"
+harness = false
+required-features = ["gui"]
+
 [dependencies]
 
 rand = "0.10.2"
-winit = { version = "0.30.13", optional = true }
-wgpu = { version = "29.0.4", optional = true }
+winit = { version = "0.31.0-beta.2", optional = true }
+wgpu = { version = "30.0.1", optional = true }
 futures = { version = "0.3.31", optional = true }
 bytemuck = { version = "1.25.2", optional = true }
 rayon = { version = "1.10.0", optional = true }
@@ -31,4 +40,4 @@ clap = { version = "4.5.26", features = ["derive"] }
 [dev-dependencies]
 
 assert_cmd = "2.0.16"
-naga = "29.0.4"
+naga = { version = "30.0.1", features = ["wgsl-in"] }
