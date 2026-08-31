@@ -75,13 +75,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/linux-deps
       - uses: coactions/setup-xvfb@v1
         with:
-          run: cargo llvm-cov nextest --codecov --output-path codecov.json
+          # Nightly + `unstable`: the report includes the SIMD backend and the
+          # `benchmarks`/`simd` modules, and the `unstable`-gated
+          # `#[coverage(off)]` attributes that exclude unreachable self-test
+          # failure branches.
+          run: cargo llvm-cov nextest --features unstable --codecov --output-path codecov.json
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

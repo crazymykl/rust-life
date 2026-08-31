@@ -1,5 +1,5 @@
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
-#![cfg_attr(feature = "unstable", feature(portable_simd))]
+#![cfg_attr(feature = "unstable", feature(portable_simd, coverage_attribute))]
 
 #[cfg(all(test, feature = "unstable"))]
 mod benchmarks;
@@ -9,6 +9,13 @@ mod lifeboard;
 
 #[cfg(feature = "gui")]
 mod gui;
+
+/// Runs the GUI's windowed self-test, for the `tests/gui.rs` test binary: on
+/// macOS `winit` requires the event loop on the main thread, so the windowed
+/// code paths can only be exercised from a test binary whose `main` is the
+/// event loop.
+#[cfg(feature = "gui")]
+pub use gui::gui_selftest;
 
 mod args;
 mod board;
