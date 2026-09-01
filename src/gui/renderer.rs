@@ -1,5 +1,13 @@
 //! The `wgpu` side of the GUI: the per-window [`Renderer`], which owns the
 //! cell texture the board is uploaded to and draws it into the window.
+//!
+//! Building a `Renderer` is two-phase because the adapter and device request
+//! is asynchronous while the rest of the setup is not. [`Unattached::new_surface`]
+//! builds the surface against the window; [`Unattached::attach_device`] awaits
+//! the adapter and device and completes the surface configuration and pipeline.
+//! Native drives the second phase inline with `futures::executor::block_on`
+//! (see [`Renderer::for_window`]); the web runs it as a `spawn_local` task and
+//! attaches the result in `App::proxy_wake_up`.
 
 use std::sync::Arc;
 
@@ -11,6 +19,7 @@ use wgpu::{
     PresentMode, Queue, RenderPipeline, Surface, SurfaceConfiguration, Texture, TextureUsages,
     TextureViewDimension,
 };
+use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 /// The cell board's size (xy) and the window's size (zw), in pixels. The board
@@ -18,7 +27,7 @@ use winit::window::Window;
 /// cursor (px) / scale always maps to the right cell. Pixels outside the board
 /// render dead.
 const FRAGMENT_WGSL: &str = include_str!("board.wgsl");
-const SURFACE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+const SURFACE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
@@ -40,6 +49,124 @@ struct GpuState {
     cells: Vec<[u8; 4]>,
 }
 
+/// A renderer with its surface but not yet its adapter and device. It keeps
+/// the instance that created the surface alongside it, so the second phase can
+/// request a compatible adapter and complete the build.
+pub(super) struct Unattached {
+    instance: wgpu::Instance,
+    surface: Surface<'static>,
+    surface_config: SurfaceConfiguration,
+}
+
+impl Unattached {
+    /// Create the wgpu surface and the (adapter- and device-free) renderer
+    /// against the window.
+    ///
+    /// One `instance` backs both the surface and the adapter: each `Instance`
+    /// has its own object storage, and a surface is only resolvable by the
+    /// instance that created it, so it is kept on the `Unattached` for the
+    /// second phase. A second handle to the same window (cloned out of the
+    /// `Arc`) is boxed into the `SurfaceTarget`, keeping the `Surface` alive
+    /// for as long as the window does, and letting it be `'static`.
+    ///
+    /// The `?` only fires on a GPU failure, which a passing test can't force,
+    /// so exclude it from coverage.
+    #[cfg_attr(feature = "unstable", coverage(off))]
+    pub(super) fn new_surface(
+        window: &Arc<dyn Window>,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, String> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let surface = Self::create_surface(&instance, window)?;
+
+        let surface_config = SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: SURFACE_FORMAT,
+            width: size.width,
+            height: size.height,
+            present_mode: PresentMode::Fifo,
+            alpha_mode: CompositeAlphaMode::Auto,
+            view_formats: vec![SURFACE_FORMAT],
+            desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+        };
+
+        Ok(Unattached {
+            instance,
+            surface,
+            surface_config,
+        })
+    }
+
+    /// Create the wgpu surface for the window. The error arm only runs on a
+    /// GPU failure, which a passing test can't force, so exclude it from
+    /// coverage.
+    #[cfg_attr(feature = "unstable", coverage(off))]
+    fn create_surface(
+        instance: &wgpu::Instance,
+        window: &Arc<dyn Window>,
+    ) -> Result<Surface<'static>, String> {
+        instance
+            .create_surface(SurfaceTarget::from(window.clone()))
+            .map_err(|e| format!("failed to create a wgpu surface: {e:?}"))
+    }
+
+    /// Await an adapter and device compatible with the surface, then complete
+    /// the surface configuration and build the pipeline and uniform buffer.
+    ///
+    /// This is the async heart of the build. Native drives it inline with
+    /// `futures::executor::block_on` (safe: the `wgpu` requests resolve without
+    /// an external runtime); the web runs it as a `spawn_local` task (a
+    /// `block_on` there would deadlock, since the requests resolve on browser
+    /// microtasks). The `?` only fires on a GPU failure, which a passing test
+    /// can't force, so exclude it from coverage.
+    #[cfg_attr(feature = "unstable", coverage(off))]
+    pub(super) async fn attach_device(self) -> Result<Renderer, String> {
+        let (device, queue) = Self::request_device(&self.instance, &self.surface).await?;
+        self.surface.configure(&device, &self.surface_config);
+
+        let (pipeline, bind_group_layout) = Renderer::create_pipeline(&device);
+        let rect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rect buffer"),
+            size: 16,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Ok(Renderer {
+            device,
+            queue,
+            surface: self.surface,
+            surface_config: self.surface_config,
+            pipeline,
+            bind_group_layout,
+            rect_buffer,
+            gpu_state: GpuState::default(),
+        })
+    }
+
+    /// Pick an adapter and device compatible with the surface. The error arms
+    /// only run on a GPU failure, which a passing test can't force, so exclude
+    /// them from coverage.
+    #[cfg_attr(feature = "unstable", coverage(off))]
+    async fn request_device(
+        instance: &wgpu::Instance,
+        surface: &Surface<'static>,
+    ) -> Result<(Device, Queue), String> {
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(surface),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| format!("failed to request a wgpu adapter: {e:?}"))?;
+        adapter
+            .request_device(&Default::default())
+            .await
+            .map_err(|e| format!("failed to request a wgpu device: {e:?}"))
+    }
+}
+
 /// The per-frame renderer, built once against a window's surface.
 pub(super) struct Renderer {
     device: Device,
@@ -53,79 +180,56 @@ pub(super) struct Renderer {
 }
 
 impl Renderer {
+    /// Build a complete renderer against the window, driving the async device
+    /// request to completion with `futures::executor::block_on`. This is
+    /// native-only: on the web the request resolves on browser microtasks, so
+    /// `block_on` (which parks the thread) would deadlock — the web instead
+    /// runs `attach_device` as a `spawn_local` task.
+    ///
+    /// The `?` only fires on a GPU failure, which a passing test can't force,
+    /// so exclude it from coverage.
+    #[cfg_attr(feature = "unstable", coverage(off))]
     pub(super) fn for_window(window: &Arc<dyn Window>) -> Result<Renderer, String> {
-        // One instance for both the surface and the adapter: each
-        // `Instance` has its own object storage, and a surface is only
-        // resolvable by the instance that created it.
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let surface = Self::create_surface(&instance, window)?;
-        let (device, queue) = Self::request_device(&instance, &surface)?;
+        let unattached = Unattached::new_surface(window, window.surface_size())?;
+        futures::executor::block_on(unattached.attach_device())
+    }
 
-        let size = window.surface_size();
-        let surface_config = SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: SURFACE_FORMAT,
-            width: size.width,
-            height: size.height,
-            present_mode: PresentMode::Fifo,
-            alpha_mode: CompositeAlphaMode::Auto,
-            view_formats: vec![SURFACE_FORMAT],
-            desired_maximum_frame_latency: 2,
-            color_space: wgpu::SurfaceColorSpace::Auto,
+    /// The surface's current configured size, in physical pixels.
+    ///
+    /// Used on the web to seed the first frame's rect uniform: the surface is
+    /// configured at the window's size in `can_create_surfaces`, and
+    /// `Window::surface_size` is not yet populated there.
+    #[cfg(target_family = "wasm")]
+    pub(super) fn surface_size(&self) -> (u32, u32) {
+        (self.surface_config.width, self.surface_config.height)
+    }
+
+    /// Reconfigure the surface for a new window size. A zero size (which
+    /// happens when the window is minimized) leaves the current configuration
+    /// in place.
+    pub(super) fn reconfigure(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.surface_config = SurfaceConfiguration {
+            width,
+            height,
+            ..self.surface_config.clone()
         };
-        surface.configure(&device, &surface_config);
-
-        let (pipeline, bind_group_layout) = Self::create_pipeline(&device);
-        let rect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rect buffer"),
-            size: 16,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        Ok(Renderer {
-            device,
-            queue,
-            surface,
-            surface_config,
-            pipeline,
-            bind_group_layout,
-            rect_buffer,
-            gpu_state: GpuState::default(),
-        })
+        self.surface.configure(&self.device, &self.surface_config);
     }
 
-    /// Create the wgpu surface for the window. A second handle to the same
-    /// window (cloned out of the `Arc`) is boxed into the `SurfaceTarget`,
-    /// keeping the `Surface` alive for as long as the window does, and lets
-    /// it be `'static`. The error arm only runs on a GPU failure, which a
-    /// passing test can't force, so exclude it from coverage.
-    #[cfg_attr(feature = "unstable", coverage(off))]
-    fn create_surface(
-        instance: &wgpu::Instance,
-        window: &Arc<dyn Window>,
-    ) -> Result<Surface<'static>, String> {
-        instance
-            .create_surface(SurfaceTarget::from(window.clone()))
-            .map_err(|e| format!("failed to create a wgpu surface: {e:?}"))
-    }
-
-    /// Pick an adapter and device compatible with the surface. The error
-    /// arms only run on a GPU failure, which a passing test can't force, so
-    /// exclude them from coverage.
-    #[cfg_attr(feature = "unstable", coverage(off))]
-    fn request_device(
-        instance: &wgpu::Instance,
-        surface: &Surface<'static>,
-    ) -> Result<(Device, Queue), String> {
-        let adapter =
-            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                compatible_surface: Some(surface),
-                ..Default::default()
-            }))
-            .map_err(|e| format!("failed to request a wgpu adapter: {e:?}"))?;
-        futures::executor::block_on(adapter.request_device(&Default::default()))
-            .map_err(|e| format!("failed to request a wgpu device: {e:?}"))
+    /// Upload the (board px, window px) uniform the vertex shader uses to keep
+    /// the board anchored at the top-left at `scale` px per cell.
+    pub(super) fn update_rect(&mut self, board_px: (f32, f32), window_px: (u32, u32)) {
+        let data = [
+            board_px.0,
+            board_px.1,
+            window_px.0 as f32,
+            window_px.1 as f32,
+        ];
+        self.queue
+            .write_buffer(&self.rect_buffer, 0, bytemuck::cast_slice(&data));
     }
 
     /// Build the render pipeline and its bind group layout.
@@ -199,34 +303,6 @@ impl Renderer {
             cache: None,
         });
         (pipeline, bind_group_layout)
-    }
-
-    /// Reconfigure the surface for a new window size. A zero size (which
-    /// happens when the window is minimized) leaves the current configuration
-    /// in place.
-    pub(super) fn reconfigure(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        self.surface_config = SurfaceConfiguration {
-            width,
-            height,
-            ..self.surface_config.clone()
-        };
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-
-    /// Upload the (board px, window px) uniform the vertex shader uses to keep
-    /// the board anchored at the top-left at `scale` px per cell.
-    pub(super) fn update_rect(&mut self, board_px: (f32, f32), window_px: (u32, u32)) {
-        let data = [
-            board_px.0,
-            board_px.1,
-            window_px.0 as f32,
-            window_px.1 as f32,
-        ];
-        self.queue
-            .write_buffer(&self.rect_buffer, 0, bytemuck::cast_slice(&data));
     }
 
     /// Create a fresh cell texture for the board's current size, plus the
