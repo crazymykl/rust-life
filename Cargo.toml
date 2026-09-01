@@ -12,7 +12,10 @@ edition = '2024'
 
 default = ["gui", "rayon"]
 unstable = []
-gui = ["dep:winit", "dep:wgpu", "dep:futures", "dep:bytemuck"]
+gui = ["dep:winit", "dep:wgpu", "dep:bytemuck", "dep:futures"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [[bench]]
 
@@ -32,10 +35,28 @@ required-features = ["gui"]
 rand = "0.10.2"
 winit = { version = "0.31.0-beta.2", optional = true }
 wgpu = { version = "30.0.1", optional = true }
-futures = { version = "0.3.31", optional = true }
 bytemuck = { version = "1.25.2", optional = true }
+# Drives the async device request on native (the GUI self-test also uses it);
+# wasm uses `wasm-bindgen-futures` instead.
+futures = { version = "0.3.31", optional = true }
 rayon = { version = "1.10.0", optional = true }
 clap = { version = "4.5.26", features = ["derive"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+
+# On wasm the JS engine's RNG is the only source of entropy, so `rand`'s
+# sys-rng path (via `getrandom`) needs the `wasm_js` backend.
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
+# std's `Instant` is unusable on wasm (and winit's `ControlFlow::WaitUntil`
+# takes `web_time::Instant` there), so pacing uses the same type.
+web-time = "1.1.0"
+# The web build has no command line, so it is launched by a
+# `#[wasm_bindgen(start)]` entry point instead of `fn main`.
+wasm-bindgen = "0.2"
+# The wgpu adapter/device futures resolve on browser microtasks, so the GUI's
+# async init runs as a `spawn_local` task on the wasm event loop and signals
+# the `winit` loop back via `EventLoopProxy::wake_up`.
+wasm-bindgen-futures = "0.4"
 
 [dev-dependencies]
 

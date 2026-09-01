@@ -17,6 +17,27 @@ mod gui;
 #[cfg(feature = "gui")]
 pub use gui::gui_selftest;
 
+/// Runs the GUI with a fixed, browser-appropriate configuration. The web build
+/// has no command line (clap reads `std::env::args`, which is unsupported on
+/// wasm), so its entry point calls this instead of [`run`].
+#[cfg(all(feature = "gui", target_family = "wasm"))]
+pub fn run_web() {
+    // A 512x512 canvas (64 cells at 8 px each), 60 steps per second, Conway's
+    // rule, no generation cap — left to the user to pause (space/right-click)
+    // and edit (left-click) on screen.
+    let brd: Board = Board::new(64, 64).random();
+    gui::run(brd, 8.0, 60, true, None, false);
+}
+
+/// The wasm entry point: `wasm-bindgen` calls `start` when the module is
+/// loaded. It runs on the main thread (wasm is single-threaded here), which is
+/// where `winit` and `wgpu` require it.
+#[cfg(all(feature = "gui", target_family = "wasm"))]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+fn start() {
+    run_web();
+}
+
 mod args;
 mod board;
 mod rules;

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Life</title>
+    <style>
+      /* Keep the canvas crisp: no borders/padding/transforms (winit can't
+         account for them in its geometry math). */
+      body { margin: 0; background: #000; }
+      canvas { display: block; image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      // The default export is the async `init()`. Loading the module instantiates
+      // the wasm, and the `#[wasm_bindgen(start)]` hook in `rust_life` then
+      // launches the GUI automatically.
+      const init = await import('../pkg/rust_life.js');
+      await init.default();
+    </script>
+  </body>
+</html>

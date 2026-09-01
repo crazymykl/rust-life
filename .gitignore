@@ -1,3 +1,7 @@
 .*
 target
 lcov.info
+
+# `wasm-pack build --target web` output (rebuild with the command in the
+# README). `pkg/.gitignore` is wasm-pack's own; the build dir is ignored here.
+pkg/
