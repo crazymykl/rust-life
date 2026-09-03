@@ -22,11 +22,21 @@ pub use gui::gui_selftest;
 /// wasm), so its entry point calls this instead of [`run`].
 #[cfg(all(feature = "gui", target_family = "wasm"))]
 pub fn run_web() {
-    // A 512x512 canvas (64 cells at 8 px each), 60 steps per second, Conway's
-    // rule, no generation cap — left to the user to pause (space/right-click)
-    // and edit (left-click) on screen.
-    let brd: Board = Board::new(64, 64).random();
-    gui::run(brd, 8.0, 60, true, None, false);
+    // The page's canvas is a fixed CSS size (web/index.html); in device
+    // pixels that is CSS size × the display's DPR, so seed a board that
+    // exactly fills the canvas at `SCALE` px per cell — on a high-DPI display
+    // a fixed 64×64 seed would be dead-padded to the canvas, leaving the
+    // random field in a corner.
+    const CANVAS_CSS_PX: f64 = 512.0;
+    const SCALE: f64 = 8.0;
+    let dpr = web_sys::window()
+        .map(|w| w.device_pixel_ratio())
+        .unwrap_or(1.0);
+    let side = (CANVAS_CSS_PX * dpr / SCALE).round() as usize;
+    // 60 steps per second, Conway's rule, no generation cap — left to the
+    // user to pause (space/right-click) and edit (left-click) on screen.
+    let brd = ScalarBitBoard::new(side, side).random();
+    gui::run(brd, SCALE, 60, true, None, false);
 }
 
 /// The wasm entry point: `wasm-bindgen` calls `start` when the module is

@@ -51,6 +51,21 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: target/nextest/ci/junit.xml
 
+  web:
+    name: build wasm
+    # The wasm build is target-only (no testable runtime), so the job just
+    # verifies it compiles: a broken web-only path (e.g. a `cfg(wasm)`
+    # branch) would otherwise only surface locally.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@wasm-pack
+      - run: wasm-pack build --target web --out-dir pkg --dev
+
   bench:
     strategy:
       matrix:

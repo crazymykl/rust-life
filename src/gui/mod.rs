@@ -62,13 +62,15 @@ impl<B: LifeBoard> State<B> {
         )
     }
 
+    fn board_size(&self) -> (u32, u32) {
+        (self.brd.cols() as u32, self.brd.rows() as u32)
+    }
+
     /// The board's size in pixels, at the current scale.
     fn board_px(&self) -> (f32, f32) {
         let scale = self.scale as f32;
-        (
-            self.brd.cols() as f32 * scale,
-            self.brd.rows() as f32 * scale,
-        )
+        let (cols, rows) = self.board_size();
+        (cols as f32 * scale, rows as f32 * scale)
     }
 
     fn cursor_moved(&mut self, physical: PhysicalPosition<f64>) {
@@ -129,7 +131,10 @@ impl<B: LifeBoard> State<B> {
     }
 
     fn close_requested(&mut self) {
-        self.should_close = true;
+        // On the web there is no app to close — exiting the loop would just
+        // freeze the GUI — so the browser tab (the only "window") is the
+        // way out, and a close request is a no-op there.
+        self.should_close = cfg!(not(target_family = "wasm"));
     }
 }
 

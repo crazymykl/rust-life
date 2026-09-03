@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use super::app::App;
-use super::renderer::Renderer;
+use super::renderer::Unattached;
 use crate::board::Board;
 use crate::lifeboard::LifeBoard;
 use winit::application::ApplicationHandler;
@@ -128,22 +128,24 @@ impl ApplicationHandler for GuiSelfTest {
                 .expect("failed to create the scratch window"),
         );
         {
-            let mut renderer =
-                Renderer::for_window(&scratch).expect("failed to initialize the scratch renderer");
+            let unattached = Unattached::new_surface(&scratch, scratch.surface_size())
+                .expect("failed to create the scratch surface");
+            let mut renderer = futures::executor::block_on(unattached.attach_device())
+                .expect("failed to initialize the scratch renderer");
             renderer.draw(self.app.state());
             // A zero-size reconfigure (the minimized-window guard) is a
             // no-op; a subsequent reconfigure still works.
-            renderer.reconfigure(0, 0);
-            renderer.reconfigure(16, 16);
+            renderer.reconfigure(PhysicalSize::new(0, 0));
+            renderer.reconfigure(PhysicalSize::new(16, 16));
             renderer.draw(self.app.state());
         }
 
         // Grow the app's window; the board pads to fit and the next draw
         // rebuilds the cell texture.
         let window = self.app.window().expect("the app window was never created");
-        // A `None` here is normal (macOS and friends report the applied size
-        // later via `SurfaceResized`); the frame wait below is where the
-        // resize is actually verified.
+        // A `None` return is the usual case: the request went to the display
+        // system and the applied size arrives later as a `SurfaceResized`. The
+        // frame wait below is where the resize is actually verified.
         let _ = window.request_surface_size(PhysicalSize::new(RESIZE_PX, RESIZE_PX).into());
     }
 
@@ -155,7 +157,7 @@ impl ApplicationHandler for GuiSelfTest {
     ) {
         // Only the app's window is forwarded; the scratch window's events
         // (an initial `SurfaceResized`, any redraws) are ignored.
-        if Some(window_id) == self.app.window_id() {
+        if Some(window_id) == self.app.window().map(|w| w.id()) {
             self.app.window_event(event_loop, window_id, event);
         }
     }
@@ -175,7 +177,11 @@ impl ApplicationHandler for GuiSelfTest {
             // the cell texture) before closing through the app's own
             // `CloseRequested` path.
             Some(seen) if self.closed_at.is_none() && self.frame - seen >= 3 => {
-                let window_id = self.app.window_id().expect("no window to close");
+                let window_id = self
+                    .app
+                    .window()
+                    .map(|w| w.id())
+                    .expect("no window to close");
                 self.app
                     .window_event(event_loop, window_id, WindowEvent::CloseRequested);
                 self.closed_at = Some(self.frame);
