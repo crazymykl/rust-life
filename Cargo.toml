@@ -47,6 +47,9 @@ clap = { version = "4.5.26", features = ["derive"] }
 # On wasm the JS engine's RNG is the only source of entropy, so `rand`'s
 # sys-rng path (via `getrandom`) needs the `wasm_js` backend.
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
+# Reads the display's device pixel ratio to size the initial board to the
+# canvas (see `run_web`).
+web-sys = { version = "0.3", features = ["Window"] }
 # std's `Instant` is unusable on wasm (and winit's `ControlFlow::WaitUntil`
 # takes `web_time::Instant` there), so pacing uses the same type.
 web-time = "1.1.0"

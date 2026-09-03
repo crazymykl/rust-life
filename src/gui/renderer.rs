@@ -1,13 +1,14 @@
 //! The `wgpu` side of the GUI: the per-window [`Renderer`], which owns the
 //! cell texture the board is uploaded to and draws it into the window.
 //!
-//! Building a `Renderer` is two-phase because the adapter and device request
-//! is asynchronous while the rest of the setup is not. [`Unattached::new_surface`]
-//! builds the surface against the window; [`Unattached::attach_device`] awaits
-//! the adapter and device and completes the surface configuration and pipeline.
-//! Native drives the second phase inline with `futures::executor::block_on`
-//! (see [`Renderer::for_window`]); the web runs it as a `spawn_local` task and
-//! attaches the result in `App::proxy_wake_up`.
+//! Building a `Renderer` is two-phase: the surface is built synchronously
+//! against the window ([`Unattached::new_surface`]), but the adapter and
+//! device request is async ([`Unattached::attach_device`]).
+//! [`App::can_create_surfaces`](super::app) drives that request: inline with
+//! `futures::executor::block_on` on native (it resolves without an external
+//! runtime, and the `wgpu` handles are `Send` there), as a `spawn_local` task
+//! on the web (it only resolves on browser microtasks), whose finished
+//! [`Renderer`] `App::proxy_wake_up` then attaches.
 
 use std::sync::Arc;
 
@@ -22,36 +23,38 @@ use wgpu::{
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-/// The cell board's size (xy) and the window's size (zw), in pixels. The board
-/// is anchored at the top-left and kept at exactly `scale` px per cell, so
-/// cursor (px) / scale always maps to the right cell. Pixels outside the board
-/// render dead.
+/// The vertex/fragment shader for the cell texture, embedded from board.wgsl
+/// (where it is documented).
 const FRAGMENT_WGSL: &str = include_str!("board.wgsl");
+// The sRGB canvas formats (`bgra8unorm-srgb`, `rgba8unorm-srgb`) are not
+// supported by every WebGPU engine, and once wgpu's webgpu backend fails to
+// configure the surface it stays in a permanently-`Lost` state (a black
+// canvas). `bgra8unorm` is spec-guaranteed for canvases and is fine on
+// native Metal.
 const SURFACE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 const LIVE_COLOR: [u8; 4] = [255, 255, 255, 255];
 const DEAD_COLOR: [u8; 4] = [0, 0, 0, 255];
 
-/// The cell texture and the bind group that binds it (and its sampler) to the
-/// pipeline. These are created and rebuilt together, so they are grouped into
-/// a single `Option` to rule out a half-built or partially-freed set (wgpu's
-/// refcounting keeps the sampler and texture alive via the bind group).
-struct Cell {
+/// The cell texture and the bind group that binds it to the pipeline. These
+/// are created and rebuilt together, so they are grouped into a single
+/// `Option` to rule out a half-built or partially-freed set (wgpu's
+/// refcounting keeps them alive via the bind group).
+struct BoardData {
     texture: Texture,
     bind_group: BindGroup,
 }
 
-/// The GPU-side state for the board: the (optional) cell texture and its
+/// The GPU-side state for the board: the (optional) board texture and its
 /// bindings, plus the reusable upload buffer.
 #[derive(Default)]
 struct GpuState {
-    cell: Option<Cell>,
+    board_data: Option<BoardData>,
     /// Reusable RGBA upload buffer, sized for the largest board so far.
     cells: Vec<[u8; 4]>,
 }
 
-/// A renderer with its surface but not yet its adapter and device. It keeps
-/// the instance that created the surface alongside it, so the second phase can
-/// request a compatible adapter and complete the build.
+/// The surface and its (adapter- and device-free) configuration, plus the
+/// `Instance` that created the surface — it must back the device request too.
 pub(super) struct Unattached {
     instance: wgpu::Instance,
     surface: Surface<'static>,
@@ -59,18 +62,12 @@ pub(super) struct Unattached {
 }
 
 impl Unattached {
-    /// Create the wgpu surface and the (adapter- and device-free) renderer
-    /// against the window.
-    ///
-    /// One `instance` backs both the surface and the adapter: each `Instance`
-    /// has its own object storage, and a surface is only resolvable by the
-    /// instance that created it, so it is kept on the `Unattached` for the
-    /// second phase. A second handle to the same window (cloned out of the
-    /// `Arc`) is boxed into the `SurfaceTarget`, keeping the `Surface` alive
-    /// for as long as the window does, and letting it be `'static`.
-    ///
-    /// The `?` only fires on a GPU failure, which a passing test can't force,
-    /// so exclude it from coverage.
+    /// Build the surface against the window at `size` (the window's initial
+    /// size, passed explicitly because on the web `Window::surface_size` is
+    /// not yet populated when this is called). The window handle is cloned
+    /// into the `SurfaceTarget` so the surface outlives the `Arc` that created
+    /// it. The `?` only fires on a GPU failure, which a passing test can't
+    /// force, so exclude it from coverage.
     #[cfg_attr(feature = "unstable", coverage(off))]
     pub(super) fn new_surface(
         window: &Arc<dyn Window>,
@@ -111,15 +108,9 @@ impl Unattached {
             .map_err(|e| format!("failed to create a wgpu surface: {e:?}"))
     }
 
-    /// Await an adapter and device compatible with the surface, then complete
-    /// the surface configuration and build the pipeline and uniform buffer.
-    ///
-    /// This is the async heart of the build. Native drives it inline with
-    /// `futures::executor::block_on` (safe: the `wgpu` requests resolve without
-    /// an external runtime); the web runs it as a `spawn_local` task (a
-    /// `block_on` there would deadlock, since the requests resolve on browser
-    /// microtasks). The `?` only fires on a GPU failure, which a passing test
-    /// can't force, so exclude it from coverage.
+    /// Await a compatible adapter and device, then configure the surface and
+    /// build the pipeline and uniform buffer. The `?` only fires on a GPU
+    /// failure, which a passing test can't force, so exclude it from coverage.
     #[cfg_attr(feature = "unstable", coverage(off))]
     pub(super) async fn attach_device(self) -> Result<Renderer, String> {
         let (device, queue) = Self::request_device(&self.instance, &self.surface).await?;
@@ -180,40 +171,24 @@ pub(super) struct Renderer {
 }
 
 impl Renderer {
-    /// Build a complete renderer against the window, driving the async device
-    /// request to completion with `futures::executor::block_on`. This is
-    /// native-only: on the web the request resolves on browser microtasks, so
-    /// `block_on` (which parks the thread) would deadlock — the web instead
-    /// runs `attach_device` as a `spawn_local` task.
-    ///
-    /// The `?` only fires on a GPU failure, which a passing test can't force,
-    /// so exclude it from coverage.
-    #[cfg_attr(feature = "unstable", coverage(off))]
-    pub(super) fn for_window(window: &Arc<dyn Window>) -> Result<Renderer, String> {
-        let unattached = Unattached::new_surface(window, window.surface_size())?;
-        futures::executor::block_on(unattached.attach_device())
-    }
-
-    /// The surface's current configured size, in physical pixels.
-    ///
-    /// Used on the web to seed the first frame's rect uniform: the surface is
-    /// configured at the window's size in `can_create_surfaces`, and
-    /// `Window::surface_size` is not yet populated there.
-    #[cfg(target_family = "wasm")]
-    pub(super) fn surface_size(&self) -> (u32, u32) {
-        (self.surface_config.width, self.surface_config.height)
+    /// The size the surface is currently configured at, in physical pixels.
+    /// Used to seed the first frame's rect uniform; on the web this is the
+    /// authoritative size, since `Window::surface_size` is not yet populated
+    /// when the renderer attaches.
+    pub(super) fn surface_size(&self) -> PhysicalSize<u32> {
+        PhysicalSize::new(self.surface_config.width, self.surface_config.height)
     }
 
     /// Reconfigure the surface for a new window size. A zero size (which
     /// happens when the window is minimized) leaves the current configuration
     /// in place.
-    pub(super) fn reconfigure(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
+    pub(super) fn reconfigure(&mut self, size: PhysicalSize<u32>) {
+        if size.width == 0 || size.height == 0 {
             return;
         }
         self.surface_config = SurfaceConfiguration {
-            width,
-            height,
+            width: size.width,
+            height: size.height,
             ..self.surface_config.clone()
         };
         self.surface.configure(&self.device, &self.surface_config);
@@ -221,12 +196,12 @@ impl Renderer {
 
     /// Upload the (board px, window px) uniform the vertex shader uses to keep
     /// the board anchored at the top-left at `scale` px per cell.
-    pub(super) fn update_rect(&mut self, board_px: (f32, f32), window_px: (u32, u32)) {
+    pub(super) fn update_rect(&mut self, board_px: (f32, f32), window_px: PhysicalSize<u32>) {
         let data = [
             board_px.0,
             board_px.1,
-            window_px.0 as f32,
-            window_px.1 as f32,
+            window_px.width as f32,
+            window_px.height as f32,
         ];
         self.queue
             .write_buffer(&self.rect_buffer, 0, bytemuck::cast_slice(&data));
@@ -270,12 +245,12 @@ impl Renderer {
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("cell pipeline layout"),
+            label: Some("board pipeline layout"),
             bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cell pipeline"),
+            label: Some("board pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -305,20 +280,20 @@ impl Renderer {
         (pipeline, bind_group_layout)
     }
 
-    /// Create a fresh cell texture for the board's current size, plus the
+    /// Create a fresh board texture for the board's current size, plus the
     /// sampler and bind group that bind it, then upload the current cells.
-    pub(super) fn init_cell_texture<B: LifeBoard>(&mut self, state: &State<B>) {
-        let (cols, rows) = (state.brd.cols(), state.brd.rows());
-        let texture = Self::new_cell_texture(&self.device, cols, rows);
+    pub(super) fn init_board_texture<B: LifeBoard>(&mut self, state: &State<B>) {
+        let (cols, rows) = state.board_size();
+        let texture = Self::new_board_texture(&self.device, cols, rows);
         let view = texture.create_view(&Default::default());
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("cell sampler"),
+            label: Some("board sampler"),
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("cell bind group"),
+            label: Some("board bind group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -339,32 +314,33 @@ impl Renderer {
                 },
             ],
         });
-        self.gpu_state.cell = Some(Cell {
+        self.gpu_state.board_data = Some(BoardData {
             texture,
             bind_group,
         });
         self.upload_cells(state);
+        self.update_rect(state.board_px(), self.surface_size());
     }
 
-    /// Rebuild the cell texture if the board changed size (it does when a
+    /// Rebuild the board texture if the board changed size (it does when a
     /// window resize pads the board), so it matches the board dimensions.
     fn resize_if_needed<B: LifeBoard>(&mut self, state: &State<B>) {
-        let Some(cell) = self.gpu_state.cell.as_ref() else {
+        let Some(board_data) = self.gpu_state.board_data.as_ref() else {
             return;
         };
-        let (cols, rows) = (state.brd.cols(), state.brd.rows());
-        let size = cell.texture.size();
-        if size.width != cols as u32 || size.height != rows as u32 {
-            self.init_cell_texture(state);
+        let (cols, rows) = state.board_size();
+        let size = board_data.texture.size();
+        if size.width != cols || size.height != rows {
+            self.init_board_texture(state);
         }
     }
 
-    fn new_cell_texture(device: &Device, cols: usize, rows: usize) -> Texture {
+    fn new_board_texture(device: &Device, cols: u32, rows: u32) -> Texture {
         device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("cell texture"),
+            label: Some("board texture"),
             size: Extent3d {
-                width: cols as u32,
-                height: rows as u32,
+                width: cols,
+                height: rows,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -388,23 +364,23 @@ impl Renderer {
         }
     }
 
-    /// Upload the board's cell colors to the cell texture.
+    /// Upload the board's cell colors to the board texture.
     fn upload_cells<B: LifeBoard>(&mut self, state: &State<B>) {
         self.fill_cells(state);
-        let Some(cell) = self.gpu_state.cell.as_ref() else {
+        let Some(board_data) = self.gpu_state.board_data.as_ref() else {
             return;
         };
         let cells = &self.gpu_state.cells;
-        let (cols, rows) = (state.brd.cols(), state.brd.rows());
+        let (cols, rows) = state.board_size();
         self.queue.write_texture(
-            cell.texture.as_image_copy(),
+            board_data.texture.as_image_copy(),
             bytemuck::cast_slice(cells),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(cols as u32 * 4),
-                rows_per_image: Some(rows as u32),
+                bytes_per_row: Some(cols * 4),
+                rows_per_image: Some(rows),
             },
-            cell.texture.size(),
+            board_data.texture.size(),
         );
     }
 
@@ -421,7 +397,7 @@ impl Renderer {
         // for this frame.
         self.resize_if_needed(state);
         self.upload_cells(state);
-        let Some(cell) = self.gpu_state.cell.as_ref() else {
+        let Some(board_data) = self.gpu_state.board_data.as_ref() else {
             return;
         };
         let frame = match self.surface.get_current_texture() {
@@ -458,7 +434,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &cell.bind_group, &[]);
+            pass.set_bind_group(0, &board_data.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);

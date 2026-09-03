@@ -40,3 +40,18 @@ Options:
   -V, --version
           Print version
 ```
+
+Web
+--
+The GUI can also target the web (WASM), built with `wasm-pack`:
+
+```
+wasm-pack build --target web --out-dir pkg --dev
+```
+
+`pkg/` is gitignored and rebuilt on demand. Serve the repo root over HTTP and open `web/index.html`:
+
+```
+python3 -m http.server
+```
+→ `http://localhost:8000/web/index.html`

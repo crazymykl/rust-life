@@ -13,7 +13,6 @@ use std::time::Instant;
 
 use super::State;
 use super::renderer::Renderer;
-#[cfg(target_family = "wasm")]
 use super::renderer::Unattached;
 use crate::lifeboard::LifeBoard;
 use winit::application::ApplicationHandler;
@@ -27,61 +26,46 @@ use winit::window::{Window, WindowAttributes};
 #[cfg(target_family = "wasm")]
 use web_time::Instant;
 
-/// The slot the web's device build writes the finished (or failed) renderer
-/// into; present only while the renderer is still building. Wasm is
-/// single-threaded (the build is a `spawn_local` task on the browser's main
-/// thread, the same one the loop runs on), so `Rc` + `Cell` suffices.
-#[cfg(target_family = "wasm")]
-#[derive(Clone)]
-struct Pending(Rc<Cell<Option<Result<Renderer, String>>>>);
-
-#[cfg(target_family = "wasm")]
-impl Pending {
-    fn new() -> Self {
-        Self(Rc::new(Cell::new(None)))
-    }
-
-    /// The finished build, once the `spawn_local` task has completed.
-    fn take(&self) -> Option<Result<Renderer, String>> {
-        self.0.take()
-    }
-
-    /// Install the finished build. Called by the `spawn_local` task, which
-    /// then wakes the loop to attach it.
-    fn set(&self, result: Result<Renderer, String>) {
-        self.0.set(Some(result));
-    }
+/// The renderer, or the in-flight build that will produce it. The two are
+/// mutually exclusive, so they are a single state: `Pending` only exists on
+/// the web (its device request runs in a `spawn_local` task and the result is
+/// attached in [`App::proxy_wake_up`]); native builds the renderer
+/// synchronously in `can_create_surfaces`, so it is always `Ready` there.
+enum RendererState {
+    /// The web's in-flight device build. The slot holds the result once the
+    /// `spawn_local` task finishes; it is read and cleared in
+    /// [`App::proxy_wake_up`]. Wasm is single-threaded (the build and the loop
+    /// share the browser's main thread), so `Rc` + `Cell` suffices.
+    #[cfg(target_family = "wasm")]
+    Pending {
+        slot: Rc<Cell<Result<Renderer, String>>>,
+    },
+    /// The attached renderer. Boxed (it is a bag of GPU handles) to keep the
+    /// enum small; `get_renderer` dereferences it.
+    Ready(Box<Renderer>),
 }
 
-/// The window and its [`Renderer`]. The window is created in
-/// `can_create_surfaces`.
-///
-/// On native the renderer is built synchronously there, so it is plain. On the
-/// web its adapter and device request is async, so the renderer starts as
-/// `None` and is attached in [`App::proxy_wake_up`].
-#[cfg(not(target_family = "wasm"))]
+/// The window and its [`Renderer`]. Both are created in `can_create_surfaces`.
 struct Graphics {
     window: Arc<dyn Window>,
-    renderer: Renderer,
+    renderer: RendererState,
 }
-#[cfg(target_family = "wasm")]
-struct Graphics {
-    window: Arc<dyn Window>,
-    /// `None` while the device request is in flight (the `spawn_local` task
-    /// writes its result into `pending`); `Some` once attached in
-    /// [`App::proxy_wake_up`].
-    renderer: Option<Renderer>,
-    /// Present only while `renderer` is `None`.
-    pending: Option<Pending>,
+
+/// A mutable reference to the [`Graphics`]' renderer, if it exists.
+fn get_renderer(graphics: &mut Option<Graphics>) -> Option<&mut Renderer> {
+    match &mut graphics.as_mut()?.renderer {
+        #[cfg(target_family = "wasm")]
+        RendererState::Pending { .. } => None,
+        RendererState::Ready(renderer) => Some(&mut **renderer),
+    }
 }
 
 /// The `ApplicationHandler`: owns the [`State`] and (once the surface is
 /// ready) a [`Graphics`] — the window and its [`Renderer`] — paces the
 /// simulation, and forwards `winit` window events into the headless
-/// [`State`]. The window is built in [`App::can_create_surfaces`]. On native
-/// the renderer is built synchronously there too; on the web its adapter and
-/// device request is async, so it finishes in the background and is attached
-/// in [`App::proxy_wake_up`].
+/// [`State`]. The window is built in [`App::can_create_surfaces`]; the
+/// renderer is built there on native and attached in [`App::proxy_wake_up`]
+/// on the web (see the `renderer` module for the two-phase build).
 pub(super) struct App<B: LifeBoard> {
     state: State<B>,
     graphics: Option<Graphics>,
@@ -119,7 +103,7 @@ impl<B: LifeBoard> App<B> {
         match event {
             WindowEvent::PointerMoved { position, .. } => {
                 self.state.cursor_moved(*position);
-                Action::None
+                Action::KeepRunning
             }
             WindowEvent::PointerButton { state, button, .. } => {
                 if *state == winit::event::ElementState::Pressed
@@ -131,19 +115,19 @@ impl<B: LifeBoard> App<B> {
                         _ => {}
                     }
                 }
-                Action::None
+                Action::KeepRunning
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == winit::event::ElementState::Pressed {
                     self.state.key_press(&event.logical_key);
                 }
-                Action::None
+                Action::KeepRunning
             }
             WindowEvent::CloseRequested => {
                 self.state.close_requested();
                 Action::Exit
             }
-            _ => Action::None,
+            _ => Action::KeepRunning,
         }
     }
 
@@ -153,10 +137,20 @@ impl<B: LifeBoard> App<B> {
         }
     }
 
-    /// The id of the window created in [`App::can_create_surfaces`], if any.
-    /// Used by the GUI self-test to address the window.
-    pub(super) fn window_id(&self) -> Option<winit::window::WindowId> {
-        self.graphics.as_ref().map(|g| g.window.id())
+    /// A mutable reference to the renderer, if it exists.
+    fn renderer_mut(&mut self) -> Option<&mut Renderer> {
+        get_renderer(&mut self.graphics)
+    }
+
+    /// Draw one frame if the window and renderer exist. `state` and the
+    /// renderer are borrowed from disjoint fields, so they can be held at once
+    /// (a `&mut self` helper like [`App::renderer_mut`] could not, as it
+    /// borrows the whole `App`).
+    fn draw_if_ready(&mut self) {
+        let state = &self.state;
+        if let Some(renderer) = get_renderer(&mut self.graphics) {
+            renderer.draw(state);
+        }
     }
 
     /// The window created in [`App::can_create_surfaces`], if any. Used by the
@@ -174,24 +168,17 @@ impl<B: LifeBoard> App<B> {
 /// The event-loop side effect a [`App::handle_event`] may request.
 #[derive(PartialEq, Eq, Debug)]
 enum Action {
-    /// Nothing to do.
-    None,
+    /// Keep running; no event-loop side effect is needed.
+    KeepRunning,
     /// Exit the event loop.
     Exit,
 }
 
 impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
-    /// Create the window and the renderer. Every platform calls this once the
-    /// render surface is safe to build (on desktop and web that's right after
-    /// the initial `StartCause::Init`; winit's `resumed` is not emitted on
-    /// desktop).
-    ///
-    /// On native the renderer is built synchronously (its adapter and device
-    /// request is driven with `futures::executor::block_on`, which is safe
-    /// here because the `wgpu` request resolves off-thread). On the web that
-    /// would deadlock (the request resolves on browser microtasks, which can't
-    /// run while a thread is parked), so the request is instead run as a
-    /// `spawn_local` task and attached in [`App::proxy_wake_up`].
+    /// Create the window and, on native, the renderer. Every platform calls
+    /// this once the render surface is safe to build. On the web the device
+    /// request runs in the background and the renderer is attached in
+    /// [`App::proxy_wake_up`].
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         // Built once: the window (and the in-flight renderer) already exist.
         if self.graphics.is_some() {
@@ -215,47 +202,32 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
                 .create_window(attributes)
                 .expect("failed to create the winit window"),
         );
+        // Native builds the renderer synchronously (driving the async device
+        // request inline with `block_on`), then seeds the cell texture and
+        // rect uniform so the first frame is correct.
         #[cfg(not(target_family = "wasm"))]
-        {
-            // One instance backs both the surface and the adapter: each
-            // `Instance` has its own object storage, and a surface is only
-            // resolvable by the instance that created it. `for_window` drives
-            // the async device request inline, then seeds the cell texture and
-            // the rect uniform so the first frame is correct.
-            let mut renderer =
-                Renderer::for_window(&window).expect("failed to initialize the renderer");
-            renderer.init_cell_texture(&self.state);
-            let size = window.surface_size();
-            renderer.update_rect(self.state.board_px(), (size.width, size.height));
-            self.graphics = Some(Graphics {
-                window: window.clone(),
-                renderer,
-            });
-            // Draw the first frame right away, instead of waiting for the
-            // first `about_to_wait` pass.
-            window.request_redraw();
-        }
-        #[cfg(target_family = "wasm")]
-        {
-            // Pass the window's size explicitly: on the web `window.surface_size()`
-            // is not populated until winit's async resize observer fires (after this
-            // runs), so reading it here would yield 0x0 and the surface would be
-            // configured at 0x0. `window_size` is the physical size the canvas's
-            // drawing buffer is sized to.
-            let unattached = Unattached::new_surface(&window, window_size)
+        let renderer = {
+            let unattached = Unattached::new_surface(&window, window.surface_size())
                 .expect("failed to create a wgpu surface");
-            // The adapter and device request is async, so it runs as a
-            // `spawn_local` task (a `block_on` here would deadlock). It writes
-            // the finished renderer into this slot and wakes the loop, which
-            // attaches it in `proxy_wake_up`.
-            let pending = Pending::new();
-            spawn_device_build(unattached, pending.clone(), event_loop.create_proxy());
-            self.graphics = Some(Graphics {
-                window,
-                renderer: None,
-                pending: Some(pending),
-            });
-        }
+            let mut renderer = futures::executor::block_on(unattached.attach_device())
+                .expect("failed to initialize the renderer");
+            renderer.init_board_texture(&self.state);
+            RendererState::Ready(Box::new(renderer))
+        };
+        // On the web the device request runs in the background; pass the
+        // window's size explicitly, since `window.surface_size()` is not
+        // populated until winit's async resize observer fires (after this
+        // runs) and would otherwise yield a 0x0 surface.
+        #[cfg(target_family = "wasm")]
+        let renderer = pending_slot(&window, window_size, event_loop.create_proxy());
+        self.graphics = Some(Graphics {
+            window: window.clone(),
+            renderer,
+        });
+        // Draw the first frame right away, instead of waiting for the first
+        // `about_to_wait` pass (on the web it is skipped until the renderer
+        // is attached).
+        window.request_redraw();
     }
 
     /// The web's device build finished; attach the finished renderer (or fail)
@@ -263,26 +235,30 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
     /// `can_create_surfaces`, so this is never called there.
     #[cfg(target_family = "wasm")]
     fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop) {
-        let Some(pending) = self.graphics.as_mut().and_then(|g| g.pending.take()) else {
+        let Some(graphics) = self.graphics.as_mut() else {
             return;
         };
-        let Some(result) = pending.take() else {
+        let RendererState::Pending { slot } = &mut graphics.renderer else {
             return;
         };
-        let mut renderer = result.expect("failed to initialize the renderer");
+        let Ok(mut renderer) = slot.replace(Err("already initialized".into())) else {
+            return;
+        };
 
-        // The surface was created at the window's initial size, so seed the
-        // cell texture and the rect uniform from it for the first frame.
-        let size = renderer.surface_size();
-        renderer.init_cell_texture(&self.state);
-        renderer.update_rect(self.state.board_px(), size);
+        // The device build ran in the background, so any `SurfaceResized`
+        // since `can_create_surfaces` was dropped — there was no renderer to
+        // apply it to. Re-apply the window's current size: on a high-DPI
+        // display it differs from the `board_px` size the surface was created
+        // at, and the board must pad to keep `scale` px per cell.
+        let size = graphics.window.surface_size();
+        self.state.resized(size.width, size.height);
+        renderer.reconfigure(size);
 
-        // Publish the renderer and draw the first frame.
-        let graphics = self
-            .graphics
-            .as_mut()
-            .expect("the window exists while the build is pending");
-        graphics.renderer = Some(renderer);
+        // The surface now matches the window, so seed the cell texture and
+        // the rect uniform from it for the first frame.
+        renderer.init_board_texture(&self.state);
+
+        graphics.renderer = RendererState::Ready(Box::new(renderer));
         graphics.window.request_redraw();
     }
 
@@ -307,16 +283,10 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
                 // surface size and board/window pixel sizes to the renderer so
                 // the shader keeps the board anchored at `scale` px per cell.
                 self.state.resized(size.width, size.height);
-                // The renderer exists together with the window on native, but
-                // on the web it is `None` until the build finishes in
-                // `proxy_wake_up`.
-                #[cfg(not(target_family = "wasm"))]
-                let renderer = self.graphics.as_mut().map(|g| &mut g.renderer);
-                #[cfg(target_family = "wasm")]
-                let renderer = self.graphics.as_mut().and_then(|g| g.renderer.as_mut());
-                if let Some(renderer) = renderer {
-                    renderer.reconfigure(size.width, size.height);
-                    renderer.update_rect(self.state.board_px(), (size.width, size.height));
+                let board_px = self.state.board_px();
+                if let Some(renderer) = self.renderer_mut() {
+                    renderer.reconfigure(size);
+                    renderer.update_rect(board_px, size);
                 }
                 self.request_redraw();
             }
@@ -330,47 +300,40 @@ impl<B: LifeBoard + 'static> ApplicationHandler for App<B> {
                         event_loop.exit();
                     }
                 }
-                // Only draw once the window and renderer exist; the renderer is
-                // built in `can_create_surfaces` on native and attached in
-                // `proxy_wake_up` on the web.
-                #[cfg(not(target_family = "wasm"))]
-                let renderer = self.graphics.as_mut().map(|g| &mut g.renderer);
-                #[cfg(target_family = "wasm")]
-                let renderer = self.graphics.as_mut().and_then(|g| g.renderer.as_mut());
-                if let Some(renderer) = renderer {
-                    renderer.draw(&self.state);
-                }
+                self.draw_if_ready();
             }
             // The input events (and the close request) only mutate the
             // headless `State`, so `handle_event` interprets them; we carry
             // out the event-loop side effect it reports.
             _ => match self.handle_event(&event) {
-                Action::None => {}
+                Action::KeepRunning => {}
                 Action::Exit => event_loop.exit(),
             },
         }
     }
 }
 
-/// Run the async device build on the web, delivering the finished renderer (or
-/// error) into `slot` and waking the event loop to attach it in
-/// [`App::proxy_wake_up`].
-///
-/// This uses `spawn_local` rather than `futures::executor::block_on` because
-/// the `wgpu` request resolves on browser microtasks, which can't run while a
-/// thread is parked, so `block_on` would deadlock. (`spawn_local` also keeps
-/// the build on the main thread, where the `!Send` `wgpu` types and the window
-/// require it.)
+/// Build the web's `Pending` state: the surface, the result slot, and the
+/// `spawn_local` task that fills it. A `block_on` is not an option, since the
+/// request only resolves on browser microtasks; the task wakes the event
+/// loop, and [`App::proxy_wake_up`] attaches the renderer.
 #[cfg(target_family = "wasm")]
-fn spawn_device_build(
-    unattached: Unattached,
-    slot: Pending,
+fn pending_slot(
+    window: &Arc<dyn Window>,
+    window_size: winit::dpi::PhysicalSize<u32>,
     proxy: winit::event_loop::EventLoopProxy,
-) {
-    wasm_bindgen_futures::spawn_local(async move {
-        slot.set(unattached.attach_device().await);
-        proxy.wake_up();
+) -> RendererState {
+    let unattached =
+        Unattached::new_surface(window, window_size).expect("failed to create a wgpu surface");
+    let slot = Rc::new(Cell::new(Err("Uninitialized".into())));
+    wasm_bindgen_futures::spawn_local({
+        let slot = slot.clone();
+        async move {
+            slot.set(unattached.attach_device().await);
+            proxy.wake_up();
+        }
     });
+    RendererState::Pending { slot }
 }
 
 #[cfg(test)]
@@ -407,7 +370,7 @@ mod tests {
             primary: true,
             source: PointerSource::Mouse,
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.cursor, [9.0, 5.0]);
     }
 
@@ -422,7 +385,7 @@ mod tests {
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Left),
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), "...\n.@.\n...");
     }
 
@@ -437,7 +400,7 @@ mod tests {
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Right),
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert!(!app.state.running);
     }
 
@@ -452,7 +415,7 @@ mod tests {
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Left),
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.running, before);
     }
 
@@ -468,7 +431,7 @@ mod tests {
             primary: true,
             button: ButtonSource::Unknown(0),
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), before);
     }
 
@@ -486,7 +449,7 @@ mod tests {
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Middle),
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), before);
     }
 
@@ -498,7 +461,7 @@ mod tests {
             event: key_event(Key::Character("s".into())),
             is_synthetic: false,
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.generation(), 1);
     }
 
@@ -513,7 +476,7 @@ mod tests {
             event: released,
             is_synthetic: false,
         });
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.running, before);
     }
 
@@ -530,7 +493,7 @@ mod tests {
         let mut app = app();
         let before = app.state.brd.to_string();
         let action = app.handle_event(&WindowEvent::Focused(true));
-        assert_eq!(action, Action::None);
+        assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), before);
     }
 }
