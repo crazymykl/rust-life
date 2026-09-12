@@ -25,7 +25,7 @@ jobs:
       NEXTEST_PROFILE: ${{ matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable' && 'ci' || 'default' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -58,7 +58,7 @@ jobs:
     # branch) would otherwise only surface locally.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
@@ -75,7 +75,7 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo build --release --verbose
       - if: ${{ matrix.os == 'windows-latest' }}
@@ -89,7 +89,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
