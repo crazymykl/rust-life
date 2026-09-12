@@ -33,7 +33,7 @@ required-features = ["gui"]
 [dependencies]
 
 rand = "0.10.2"
-winit = { version = "0.31.0-beta.2", optional = true }
+winit = { version = "0.31.0-beta.3", optional = true }
 wgpu = { version = "30.0.1", optional = true }
 bytemuck = { version = "1.25.2", optional = true }
 # Drives the async device request on native (the GUI self-test also uses it);
