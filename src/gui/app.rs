@@ -384,6 +384,7 @@ mod tests {
             position: PhysicalPosition::new(4.0, 4.0),
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Left),
+            is_macos_activation_click: false,
         });
         assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), "...\n.@.\n...");
@@ -399,6 +400,7 @@ mod tests {
             position: PhysicalPosition::new(0.0, 0.0),
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Right),
+            is_macos_activation_click: false,
         });
         assert_eq!(action, Action::KeepRunning);
         assert!(!app.state.running);
@@ -414,6 +416,7 @@ mod tests {
             position: PhysicalPosition::new(0.0, 0.0),
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Left),
+            is_macos_activation_click: false,
         });
         assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.running, before);
@@ -430,6 +433,7 @@ mod tests {
             position: PhysicalPosition::new(4.0, 4.0),
             primary: true,
             button: ButtonSource::Unknown(0),
+            is_macos_activation_click: false,
         });
         assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), before);
@@ -448,6 +452,7 @@ mod tests {
             position: PhysicalPosition::new(4.0, 4.0),
             primary: true,
             button: ButtonSource::Mouse(MouseButton::Middle),
+            is_macos_activation_click: false,
         });
         assert_eq!(action, Action::KeepRunning);
         assert_eq!(app.state.brd.to_string(), before);
