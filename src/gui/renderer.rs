@@ -179,6 +179,15 @@ impl Renderer {
         PhysicalSize::new(self.surface_config.width, self.surface_config.height)
     }
 
+    /// Acquire the current frame without drawing or presenting it. The
+    /// windowed self-test uses this to drive `draw`'s frameless-skip path:
+    /// while a frame is held, the next `get_current_texture` reports
+    /// `CurrentSurfaceTexture::Validation` (the `AlreadyAcquired` error is
+    /// non-fatal for a configured surface), so `draw` takes its skip path.
+    pub(super) fn acquire_frame(&self) -> wgpu::CurrentSurfaceTexture {
+        self.surface.get_current_texture()
+    }
+
     /// Reconfigure the surface for a new window size. A zero size (which
     /// happens when the window is minimized) leaves the current configuration
     /// in place.
@@ -396,10 +405,8 @@ impl Renderer {
         let Some(board_data) = self.gpu_state.board_data.as_ref() else {
             return;
         };
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            _ => return,
+        let Some(frame) = presentable_frame(self.surface.get_current_texture()) else {
+            return;
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self
@@ -438,8 +445,23 @@ impl Renderer {
     }
 }
 
+/// The frame to draw from an acquired surface texture, if there is one:
+/// `Success` and `Suboptimal` carry a usable frame, while every other status
+/// (timeout, occlusion, outdate, lost, validation error) means the surface
+/// has no frame this tick, so the caller skips drawing and retries on the
+/// next frame.
+fn presentable_frame(acquired: wgpu::CurrentSurfaceTexture) -> Option<wgpu::SurfaceTexture> {
+    match acquired {
+        wgpu::CurrentSurfaceTexture::Success(frame)
+        | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Some(frame),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Headless check that the WGSL parses (no GPU or adapter needed, so it
     /// also runs in CI). Catches shader regressions — e.g. an unknown
     /// identifier — without launching the GUI.
@@ -447,5 +469,23 @@ mod tests {
     fn shader_parses() {
         naga::front::wgsl::parse_str(super::FRAGMENT_WGSL)
             .expect("the cell shader WGSL must parse");
+    }
+
+    /// `draw` skips a frame when the surface can't hand over a texture. The
+    /// no-frame statuses can't be forced on a real surface (backends report
+    /// them inconsistently — e.g. DX12 never does — and they're racy), so the
+    /// decision is tested here with the fieldless variants; the `Some` arm is
+    /// exercised by the windowed self-test's real draws.
+    #[test]
+    fn no_frame_is_not_presentable() {
+        for acquired in [
+            wgpu::CurrentSurfaceTexture::Timeout,
+            wgpu::CurrentSurfaceTexture::Occluded,
+            wgpu::CurrentSurfaceTexture::Outdated,
+            wgpu::CurrentSurfaceTexture::Lost,
+            wgpu::CurrentSurfaceTexture::Validation,
+        ] {
+            assert!(presentable_frame(acquired).is_none());
+        }
     }
 }

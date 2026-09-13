@@ -139,6 +139,23 @@ impl ApplicationHandler for GuiSelfTest {
             renderer.reconfigure(PhysicalSize::new(16, 16));
             renderer.draw(self.app.state());
         }
+        {
+            // Exercise `draw`'s frameless skip (the no-frame arm of
+            // `get_current_texture`): acquire a frame and hold it without
+            // presenting, so the next `get_current_texture` sees the surface
+            // already acquired and reports a non-fatal `Validation` error.
+            // Dropping the held frame discards it and restores the surface.
+            // (`init_board_texture` first, since `draw` returns early while
+            // there is no cell texture.)
+            let unattached = Unattached::new_surface(&scratch, scratch.surface_size())
+                .expect("failed to create the scratch surface");
+            let mut renderer = futures::executor::block_on(unattached.attach_device())
+                .expect("failed to initialize the scratch renderer");
+            renderer.init_board_texture(self.app.state());
+            let held = renderer.acquire_frame();
+            renderer.draw(self.app.state());
+            drop(held);
+        }
 
         // Grow the app's window; the board pads to fit and the next draw
         // rebuilds the cell texture.
