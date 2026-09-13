@@ -109,7 +109,7 @@ pub(crate) struct Args {
     pub(crate) ups: u64,
 
     /// Board representation to simulate
-    #[arg(short, long, default_value_t = Backend::Board)]
+    #[arg(short, long, default_value_t = Backend::BitBoard)]
     pub(crate) backend: Backend,
 
     /// Custom neighborhood rule in Golly form (e.g. `B368/S245` for Day &
