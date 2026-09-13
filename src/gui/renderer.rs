@@ -388,10 +388,6 @@ impl Renderer {
     /// upload the current cells, then draw the cell texture anchored at the
     /// top-left and present.
     pub(super) fn draw<B: LifeBoard>(&mut self, state: &State<B>) {
-        let (width, height) = (self.surface_config.width, self.surface_config.height);
-        if width == 0 || height == 0 {
-            return;
-        }
         // Rebuild the cell texture (and its bind group) first if the board
         // changed size, then upload the cells; finally borrow the bind group
         // for this frame.
