@@ -179,13 +179,22 @@ impl Renderer {
         PhysicalSize::new(self.surface_config.width, self.surface_config.height)
     }
 
-    /// Acquire the current frame without drawing or presenting it. The
-    /// windowed self-test uses this to drive `draw`'s frameless-skip path:
-    /// while a frame is held, the next `get_current_texture` reports
-    /// `CurrentSurfaceTexture::Validation` (the `AlreadyAcquired` error is
-    /// non-fatal for a configured surface), so `draw` takes its skip path.
-    pub(super) fn acquire_frame(&self) -> wgpu::CurrentSurfaceTexture {
-        self.surface.get_current_texture()
+    /// Exercise `draw`'s frameless-skip path (the no-frame arm of
+    /// `get_current_texture`): acquire a frame and hold it without presenting,
+    /// so `draw`'s `get_current_texture` sees the surface already acquired and
+    /// reports a non-fatal `CurrentSurfaceTexture::Validation` error, taking
+    /// the skip path. Holding the frame makes the expected `AlreadyAcquired`
+    /// validation error fire, which would reach wgpu's default uncaptured
+    /// error handler (a panic) without the scope; the scope captures it, and
+    /// the guard's drop pops it and discards the captured error. Dropping the
+    /// held frame discards it and restores the surface. Only used by the
+    /// windowed self-test.
+    pub(super) fn skip_frameless_draw<B: LifeBoard>(&mut self, state: &State<B>) {
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let held = self.surface.get_current_texture();
+        self.draw(state);
+        drop(held);
+        drop(scope);
     }
 
     /// Reconfigure the surface for a new window size. A zero size (which
